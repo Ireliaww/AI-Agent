@@ -1,73 +1,133 @@
-# Deep Research Agent
+# Multi-Mode AI Assistant
 
-This repository contains the Deep Research Agent, a multi-step research agent that uses Gemini AI and the MCP protocol to conduct thorough research on any topic.
+A powerful AI assistant powered by Gemini with dual capabilities: **Deep Research** for comprehensive information gathering and **Auto Coding** for solving programming problems with self-healing debug loops.
 
 ## Features
 
--   **Interactive Mode:** Engage in a conversation with the agent to refine your research questions.
--   **Direct Question Mode:** Get a quick answer to a specific question.
--   **Powered by Gemini AI:** Leverages the power of Google's Gemini models for research and analysis.
--   **MCP Protocol:** Implements the Model Context Protocol for robust and structured communication.
--   **Mock Search:** Includes a mock search mode for testing the agent without making real API calls.
--   **Rich Console Output:** Provides a user-friendly and easy-to-read console experience.
+### Smart Router
+- **Automatic Intent Classification:** Intelligently routes queries to the appropriate agent based on content analysis
+- **Keyword Detection:** Fast routing for obvious cases (LeetCode, code, research, explain, etc.)
+- **AI-Powered Classification:** Uses Gemini for ambiguous queries with confidence scoring
 
-## How it Works
+### Deep Research Mode
+- **Iterative Research:** Multi-step workflow that progressively gathers information
+- **Parallel Search Execution:** Runs multiple search queries simultaneously for efficiency
+- **Comprehensive Reports:** Generates well-structured Markdown reports with sources
+- **MCP Protocol:** Uses Model Context Protocol for robust tool communication
 
-The Deep Research Agent follows a multi-step, iterative workflow to gather and synthesize information:
+### Auto Coding Mode
+- **Self-Healing Debug Loop:** Automatically fixes code errors (up to 3 attempts)
+- **LeetCode Solver:** Optimized for algorithm and data structure problems
+- **Test Case Generation:** Includes comprehensive test cases with edge cases
+- **Solution Persistence:** Saves solutions to files for later reference
 
-1.  **Plan:** Based on the initial research question, the agent uses Gemini to brainstorm a set of diverse search queries. This ensures that the topic is explored from multiple angles.
+## How It Works
 
-2.  **Act:** The agent executes these search queries in parallel. It uses the Model Context Protocol (MCP) to call a search tool, which can be a real search engine or a mock server for testing.
+### Research Workflow (Plan → Act → Reason → Report)
 
-3.  **Reason:** The agent analyzes the collected search results. It uses Gemini to evaluate whether it has enough information to answer the user's question comprehensively. If the information is insufficient and the agent has not reached its maximum iteration limit, it will generate additional, more targeted search queries to fill in the gaps.
+1. **Plan:** Generates diverse search queries to explore the topic from multiple angles
+2. **Act:** Executes searches in parallel using MCP-based search tools
+3. **Reason:** Evaluates if information is sufficient; generates targeted follow-up queries if needed
+4. **Report:** Produces a comprehensive Markdown report with executive summary and sources
 
-4.  **Iterate:** The agent loops through the "Act" and "Reason" steps, progressively building up its knowledge base until it determines the information is sufficient.
+### Coding Workflow (Code → Run → Fix)
 
-5.  **Report:** Once the research is complete, the agent generates a comprehensive, well-structured report in Markdown format. The report includes an executive summary, logical sections for the gathered information, and a list of the sources used.
+1. **Generate:** Creates Python solution with test cases based on problem description
+2. **Execute:** Runs the code and captures output/errors
+3. **Debug:** If tests fail, analyzes errors and generates corrected code
+4. **Iterate:** Repeats until all tests pass or max attempts reached
 
-## Usage
+## Project Structure
 
-1.  **Navigate to the agent's directory:**
+```
+deep-research-agent/
+├── main.py                 # Unified entry point
+├── src/
+│   ├── router.py          # Intent classification
+│   ├── client.py          # Gemini API client
+│   ├── agents/
+│   │   ├── researcher.py  # Research agent
+│   │   └── coder.py       # Coding agent
+│   └── tools/
+│       ├── search_tools.py
+│       └── file_tools.py
+├── solutions/             # Generated code solutions
+└── requirements.txt
+```
+
+## Quick Start
+
+1. **Navigate to the project directory:**
     ```bash
     cd deep-research-agent
     ```
 
-2.  **Install dependencies:**
+2. **Install dependencies:**
     ```bash
     pip install -r requirements.txt
     ```
 
-3.  **Configure API Key:**
-    Create a `.env` file in the `deep-research-agent` directory with your Google API key:
+3. **Configure API Key:**
+    Create a `.env` file with your Google API key:
     ```
     GOOGLE_API_KEY=your_key_here
     ```
-    You can get your API key from [Google AI Studio](https://aistudio.google.com/apikey).
+    Get your API key from [Google AI Studio](https://aistudio.google.com/apikey).
 
-4.  **Run the agent:**
-    -   **Interactive mode:**
-        ```bash
-        python main.py
-        ```
-    -   **Direct question mode:**
-        ```bash
-        python main.py --question "What is quantum computing?"
-        ```
-    -   **Mock mode (for testing without an API key):**
-        ```bash
-        python main.py --mock
-        ```
+4. **Run the assistant:**
+    ```bash
+    python main.py
+    ```
+
+## Usage
+
+### Interactive Mode
+```bash
+python main.py                    # Auto-detect mode
+python main.py --mode coding      # Force coding mode
+python main.py --mode research    # Force research mode
+```
+
+### Direct Query Mode
+```bash
+python main.py -q "Write a function to find two numbers that add up to a target"
+python main.py -q "What are the latest developments in quantum computing?"
+```
+
+### Testing (Mock Mode)
+```bash
+python main.py --mock             # Test without API calls
+```
+
+### In-App Commands
+- `/help` - Show help message
+- `/mode <coding|research|auto>` - Switch modes
+- `/clear` - Clear screen
+- `/quit` - Exit
+
+## Examples
+
+**Coding Query:**
+```
+You: Write a function to solve LeetCode Two Sum problem
+→ Routes to Coding Agent → Generates code → Runs tests → Auto-fixes if needed
+```
+
+**Research Query:**
+```
+You: What are the latest AI trends in 2024?
+→ Routes to Research Agent → Searches → Analyzes → Generates report
+```
 
 ## Dependencies
 
-The `deep-research-agent` requires the following Python packages:
-
--   `google-genai`
--   `mcp`
--   `python-dotenv`
--   `nest_asyncio`
--   `httpx`
--   `rich`
+- `google-genai` - Google Gemini AI SDK
+- `mcp` - Model Context Protocol SDK
+- `python-dotenv` - Environment variable management
+- `nest_asyncio` - Async event loop handling
+- `httpx` - HTTP client
+- `rich` - Beautiful console output
+- `questionary` - Interactive CLI prompts
 
 ## Agent Demos
 
