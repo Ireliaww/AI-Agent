@@ -69,7 +69,8 @@ class CoordinatorAgent:
             
         elif task_type == "coding_only":
             console.print("[yellow]→ Routing to Coding Agent[/yellow]")
-            return await self.coding_agent.process(user_request)
+            from src.agents.coder import run_coding_agent
+            return await run_coding_agent(user_request)
         
         else:
             # 默认：使用简单路由
@@ -101,7 +102,8 @@ Please write clean, well-documented code to solve this problem. Include:
 3. Usage examples
 """
         
-        code_result = await self.coding_agent.process(coding_request)
+        from src.agents.coder import run_coding_agent
+        code_result = await run_coding_agent(coding_request)
         
         # 组合结果
         combined_result = f"""# Research Findings
@@ -214,7 +216,7 @@ Do not include any explanation, just the classification.
 """
         
         try:
-            response = await self.gemini.generate_content_async(prompt)
+            response = await self.gemini.generate_content(prompt)
             classification = response.text.strip().lower()
             
             # Validate
@@ -282,7 +284,8 @@ Do not include any explanation, just the classification.
         
         if task_type == "coding_only":
             console.print("[yellow]→ Simple routing to Coding Agent[/yellow]")
-            return await self.coding_agent.process(request)
+            from src.agents.coder import run_coding_agent
+            return await run_coding_agent(request)
         else:
             console.print("[yellow]→ Simple routing to Research Agent[/yellow]")
             result = await self.research_agent.research(request)

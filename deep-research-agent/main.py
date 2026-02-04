@@ -67,7 +67,7 @@ ASCII_LOGO = r"""
 /_/  /_/\__,_/_/\__/_/    /_/  /_/\____/\__,_/\___/  /_/  |_/___/
 
 [/bold cyan]
-[dim]Powered by Gemini AI | Deep Research + Auto Coding[/dim]
+[dim]Powered by Gemini AI | Deep Research + Auto Coding + Paper Reproduction[/dim]
 """
 
 HELP_TEXT = """
@@ -84,9 +84,17 @@ HELP_TEXT = """
 
 [bold cyan]🤖 Coordinator Capabilities:[/bold cyan]
   • Automatically analyzes your request
-  • Routes to the best agent (Research/Coding)
+  • Routes to the best agent (Research/Coding/Enhanced Agents)
   • Supports complex multi-agent tasks
   • Combines research + coding when needed
+  • [bold green]🎓 NEW: Academic paper reproduction workflow[/bold green]
+
+[bold cyan]📚 Paper Reproduction Features:[/bold cyan]
+  • Analyze academic papers from arXiv or PDF
+  • RAG-powered deep understanding (ChromaDB + Semantic Search)
+  • Generate complete PyTorch/TensorFlow implementations
+  • Create training scripts and full project structures
+  • Interactive Q&A with papers using vector search
 
 [bold cyan]Examples:[/bold cyan]
   [dim]Simple tasks:[/dim]
@@ -96,7 +104,12 @@ HELP_TEXT = """
   [dim]Complex tasks (multi-agent):[/dim]
   "Research the QuickSort algorithm and implement it in Python"
   "Learn about binary trees and write a traversal function"
-  "Study merge sort then create test cases for it"
+  
+  [dim][bold green]🎓 Paper reproduction:[/bold green][/dim]
+  "Reproduce BERT paper"
+  "Implement Attention Is All You Need"
+  "Analyze and code ResNet architecture"
+  "Generate code for Transformer model from paper"
 """
 
 
@@ -120,13 +133,18 @@ class MultiModeAssistant:
         
         # Initialize agents and coordinator
         from src.client import GeminiClient
-        from src.agents.researcher import ResearchAgent
         from src.agents.coder import CodingAgent
         from agents.coordinator import CoordinatorAgent
+        from agents import EnhancedResearchAgent, EnhancedCodingAgent
         
         self.gemini = GeminiClient()
-        self.research_agent = ResearchAgent(gemini_client=self.gemini)
+        # Use Enhanced agents for full RAG and paper reproduction capabilities
+        self.research_agent = EnhancedResearchAgent(
+            gemini_client=self.gemini,
+            use_mock=self.use_mock
+        )
         self.coding_agent = CodingAgent(gemini_client=self.gemini)
+        self.enhanced_coding_agent = EnhancedCodingAgent(gemini_client=self.gemini)
         self.coordinator = CoordinatorAgent(
             research_agent=self.research_agent,
             coding_agent=self.coding_agent,

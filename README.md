@@ -27,44 +27,53 @@ This repository contains **deep-research-agent**, an advanced multi-agent system
 
 ## 🏗️ System Architecture
 
-![System Architecture](images/paper_reproduction_architecture.png)
+![System Architecture](images/paper_reproduction_architecture_v2.png)
 
-The system uses a **Coordinator Agent** to orchestrate two specialized agents:
-- **Enhanced Research Agent** (Green): PDF parsing, RAG indexing, semantic search
+The system uses a **Coordinator Agent** to intelligently route tasks to specialized agents:
+- **Enhanced Research Agent** (Green): **Dual-mode capability**
+  - 📄 **Paper Analysis Mode**: PDF parsing, RAG indexing, deep Q&A analysis
+  - 🔍 **General Research Mode**: Web search, synthesis, comprehensive reports
 - **Enhanced Coding Agent** (Orange): Model generation, training script creation, project structuring
 
-All paper content is indexed in **ChromaDB** for efficient semantic retrieval.
+All paper content is indexed in **ChromaDB** for efficient semantic retrieval with 300-500 token chunks.
 
 ---
 
 ## ✨ Key Features
 
-### 🔍 RAG-Enhanced Paper Understanding
-- Automatic PDF download from arXiv
-- Structured parsing (sections, equations, references)
-- 300-500 token intelligent chunking
-- ChromaDB vector storage with cosine similarity
-- Semantic search with 0.6 relevance threshold
-- Deep Q&A analysis (contributions, methodology, experiments, results)
+### 🔍 Dual-Mode Research Agent
+**Paper Analysis Mode:**
+- 🤖 **Smart Paper Title Extraction**: Handles quotes, natural language patterns
+- 📄 **Automatic PDF Download**: From arXiv using title, ID, or URL
+- 📖 **Structured Parsing**: Sections, equations, references, metadata
+- ✂️ **Intelligent Chunking**: 300-500 tokens preserving context
+- 💾 **ChromaDB Indexing**: Per-paper vector collections
+- 🧠 **Deep Q&A Analysis**: 6-aspect understanding (contributions, methodology, experiments, results, limitations)
+
+**General Research Mode:**
+- 🌐 **Deep Research Workflow**: Multi-iteration web search
+- 📊 **Information Synthesis**: Comprehensive research reports
+- 🔗 **Source Citation**: Tracked queries and results
 
 ### 💻 Large-Scale Code Generation
-- Complete PyTorch/TensorFlow/JAX implementations
-- Training loops with proper hyperparameters
-- Evaluation and testing scripts
-- YAML configuration files
-- Professional README with paper citations
-- requirements.txt with all dependencies
+- ✅ **Bug-Free Code Extraction**: Properly removes markdown code blocks
+- 🎯 **Complete Implementations**: PyTorch/TensorFlow/JAX
+- 🏃 **Training Loops**: With proper hyperparameters
+- 📊 **Evaluation Scripts**: Testing and metrics
+- ⚙️ **Configuration Files**: YAML configs
+- 📝 **Professional Documentation**: README with citations
+- 📦 **Dependency Management**: requirements.txt
 
 ### 🤖 Intelligent Multi-Agent Orchestration
-- Automatic task classification (research/coding/paper_reproduction)
-- Research → Coding pipeline for paper reproduction
-- Parallel execution where possible
-- Error handling and self-healing
+- 🎯 **LLM-Based Task Classification**: research/coding/paper_reproduction
+- 🔄 **Research → Coding Pipeline**: Seamless paper reproduction
+- ⚡ **Parallel Execution**: Where possible
+- 🛡️ **Error Handling**: Self-healing and retry logic
 
 ### 🌐 Academic Search Integration
-- arXiv API for paper search and download
-- Papers with Code for existing implementations
-- GitHub search for related repositories
+- 📚 **arXiv API**: Paper search and PDF download
+- 💻 **Papers with Code**: Existing implementations
+- 🐙 **GitHub Search**: Related repositories
 
 ---
 
@@ -452,6 +461,17 @@ python main.py -q "Reproduce your favorite paper"
 
 ---
 
-**Version**: 1.0.0  
-**Status**: ✅ Production Ready  
-**Last Updated**: February 2026
+## 🐛 Recent Bug Fixes (v1.1.0)
+
+- ✅ **Code Extraction**: Fixed regex to properly remove markdown code blocks
+- ✅ **Method Naming**: Corrected `generate_content_async` → `generate_content`
+- ✅ **Agent Integration**: Fixed `CodingAgent.process()` → `run_coding_agent()`
+- ✅ **Dual-Mode Research**: Added `research()` method to EnhancedResearchAgent
+- ✅ **Paper Title Extraction**: Smart extraction from natural language queries
+- ✅ **Import Paths**: Fixed `src.workflows` → `src.workflow`
+
+---
+
+**Version**: 1.1.0  
+**Status**: ✅ Production Ready (All Critical Bugs Fixed)  
+**Last Updated**: February 4, 2026

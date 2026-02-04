@@ -250,7 +250,7 @@ Requirements:
 Generate the complete file content:"""
         
         try:
-            response = await self.gemini.generate_content_async(prompt)
+            response = await self.gemini.generate_content(prompt)
             return response.text.strip()
         except Exception as e:
             return f"# Error generating {file_spec['path']}: {e}\n# TODO: Implement manually"
@@ -281,7 +281,7 @@ Requirements:
 Generate complete {framework} model code:"""
         
         try:
-            response = await self.gemini.generate_content_async(prompt)
+            response = await self.gemini.generate_content(prompt)
             return response.text.strip()
         except Exception as e:
             return f"# Error generating model: {e}\n# TODO: Implement manually"
@@ -314,7 +314,7 @@ Framework: {framework}
 Generate complete training code:"""
         
         try:
-            response = await self.gemini.generate_content_async(prompt)
+            response = await self.gemini.generate_content(prompt)
             return response.text.strip()
         except Exception as e:
             return f"# Error generating training code: {e}\n# TODO: Implement manually"
@@ -407,7 +407,7 @@ Include in README:
 Generate Markdown README:"""
         
         try:
-            response = await self.gemini.generate_content_async(prompt)
+            response = await self.gemini.generate_content(prompt)
             return response.text.strip()
         except Exception as e:
             return f"# {paper_analysis.content.title}\n\nImplementation of the paper.\n\n## TODO\nComplete README"

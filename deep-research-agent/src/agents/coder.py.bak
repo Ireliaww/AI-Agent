@@ -149,7 +149,7 @@ class CodingAgent:
         text = response_text.strip()
 
         # Try to extract from markdown code block
-        code_block_pattern = r'```(?:python)?\s*\n(.*?)\n\s*```'
+        code_block_pattern = r"```(?:python)?\n?(.*?)```"
         matches = re.findall(code_block_pattern, text, re.DOTALL)
 
         if matches:

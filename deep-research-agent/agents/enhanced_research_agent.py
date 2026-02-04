@@ -20,6 +20,10 @@ from rag.vector_store.chroma_store import ChromaVectorStore
 from rag.pdf_processor.text_chunker import TextChunker
 from src.client import GeminiClient
 
+# Import DeepResearchWorkflow for general research
+from src.workflow import DeepResearchWorkflow, ResearchContext
+from src.agents.researcher import ResearchResult
+
 
 @dataclass
 class PaperUnderstanding:
@@ -72,8 +76,9 @@ class EnhancedResearchAgent:
     - Multi-paper comparison (future)
     """
     
-    def __init__(self, gemini_client: GeminiClient):
+    def __init__(self, gemini_client: GeminiClient, use_mock: bool = False):
         self.gemini = gemini_client
+        self.use_mock = use_mock
         self.pdf_parser = PDFParser()
         self.academic_search = AcademicSearchTools()
         self.text_chunker = TextChunker(min_tokens=300, max_tokens=500)
@@ -81,6 +86,74 @@ class EnhancedResearchAgent:
         # Current paper's vector store (set during analysis)
         self.current_vector_store = None
         self.current_collection_name = None
+        
+        # Workflow for general research
+        self._workflow = None
+    
+    
+    def _extract_paper_title(self, user_request: str) -> str:
+        """
+        Extract paper title from user request using simple heuristics
+        
+        Examples:
+        - "Reproduce BERT paper" -> "BERT"
+        - "Implement Attention Is All You Need" -> "Attention Is All You Need"
+        - "help me reproduce \"Attention is All You Need\"" -> "Attention is All You Need"
+        """
+        import re
+        
+        # Pattern 1: Text in quotes
+        quoted = re.findall(r'["\u2018\u2019\u201c\u201d]([^"\u2018\u2019\u201c\u201d]+)["\u2018\u2019\u201c\u201d]', user_request)
+        if quoted:
+            return quoted[0].strip()
+        
+        # Pattern 2: "reproduce/implement X paper" -> X
+        # Match common patterns
+        patterns = [
+            r'reproduce\s+(?:the\s+)?["\u2018\u201c]?([^"\u2018\u201c\u201d\u2019]+?)["\u2019\u201d]?\s+(?:paper|model|architecture)',
+            r'implement\s+(?:the\s+)?["\u2018\u201c]?([^"\u2018\u201c\u201d\u2019]+?)["\u2019\u201d]?\s+(?:paper|model|architecture|from)',
+            r'analyze\s+(?:the\s+)?["\u2018\u201c]?([^"\u2018\u201c\u201d\u2019]+?)["\u2019\u201d]?\s+(?:paper|from)',
+            r'code\s+(?:the\s+)?["\u2018\u201c]?([^"\u2018\u201c\u201d\u2019]+?)["\u2019\u201d]?\s+(?:paper|model|architecture)',
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, user_request, re.IGNORECASE)
+            if match:
+                return match.group(1).strip()
+        
+        # Fallback: return entire request (will be searched)
+        return user_request
+    
+    async def research(self, question: str) -> ResearchResult:
+        """
+        Conduct general research (non-paper specific)
+        
+        This provides the same capability as the original ResearchAgent.
+        
+        Args:
+            question: The research question
+            
+        Returns:
+            ResearchResult with findings
+        """
+        # Create and run the deep research workflow
+        workflow = DeepResearchWorkflow(
+            gemini_client=self.gemini,
+            use_mock=self.use_mock,
+        )
+        
+        context = await workflow.run(question)
+        
+        # Convert to ResearchResult
+        return ResearchResult(
+            question=question,
+            report=context.final_report,
+            queries_used=context.search_queries,
+            total_results=sum(len(r.results) for r in context.search_results),
+            iterations=context.iteration,
+            success=context.error is None,
+            error=context.error,
+        )
     
     def _create_collection_name(self, title: str) -> str:
         """Create a unique collection name from paper title"""
@@ -160,8 +233,12 @@ class EnhancedResearchAgent:
         """
         print(f"📄 Analyzing paper: {paper_input}")
         
+        # Extract paper title if request is verbose
+        paper_query = self._extract_paper_title(paper_input)
+        print(f"🔍 Extracted query: {paper_query}")
+        
         # Step 1: Get paper PDF
-        paper_meta, pdf_path = await self._get_paper(paper_input)
+        paper_meta, pdf_path = await self._get_paper(paper_query)
         
         # Step 2: Parse PDF
         print("📖 Parsing PDF...")
@@ -320,7 +397,7 @@ Provide a clear, concise answer based solely on the context above. If the contex
 ANSWER:"""
         
         try:
-            response = await self.gemini.generate_content_async(prompt)
+            response = await self.gemini.generate_content(prompt)
             return response.text.strip()
         except Exception as e:
             return f"Error generating answer: {e}"
