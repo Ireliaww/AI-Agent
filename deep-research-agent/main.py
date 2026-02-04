@@ -80,24 +80,36 @@ HELP_TEXT = """
 [bold cyan]Modes:[/bold cyan]
   [magenta]CODING[/magenta]   - Solve coding problems (LeetCode, algorithms)
   [blue]RESEARCH[/blue] - Deep research on any topic
-  [cyan]AUTO[/cyan]     - Automatic mode detection (default)
+  [cyan]AUTO[/cyan]     - Intelligent Coordinator (multi-agent collaboration) [default]
+
+[bold cyan]🤖 Coordinator Capabilities:[/bold cyan]
+  • Automatically analyzes your request
+  • Routes to the best agent (Research/Coding)
+  • Supports complex multi-agent tasks
+  • Combines research + coding when needed
 
 [bold cyan]Examples:[/bold cyan]
-  "Write a function to find two numbers that add up to a target"
-  "What are the latest developments in quantum computing?"
-  "LeetCode: Implement binary search"
-  "Research AI trends in 2024"
+  [dim]Simple tasks:[/dim]
+  "Write a function to reverse a linked list"
+  "Explain how blockchain works"
+  
+  [dim]Complex tasks (multi-agent):[/dim]
+  "Research the QuickSort algorithm and implement it in Python"
+  "Learn about binary trees and write a traversal function"
+  "Study merge sort then create test cases for it"
 """
 
 
 class MultiModeAssistant:
     """
-    Multi-Mode AI Assistant with automatic routing.
+    Multi-Mode AI Assistant with Coordinator-based routing.
+    
+    Now uses CoordinatorAgent for intelligent multi-agent orchestration.
     """
 
     def __init__(self, use_mock: bool = False, forced_mode: Optional[str] = None):
         """
-        Initialize the assistant.
+        Initialize the assistant with Coordinator Agent.
 
         Args:
             use_mock: Use mock services for testing
@@ -105,11 +117,25 @@ class MultiModeAssistant:
         """
         self.use_mock = use_mock
         self.forced_mode = forced_mode
-        self.router = Router()
+        
+        # Initialize agents and coordinator
+        from src.client import GeminiClient
+        from src.agents.researcher import ResearchAgent
+        from src.agents.coder import CodingAgent
+        from agents.coordinator import CoordinatorAgent
+        
+        self.gemini = GeminiClient()
+        self.research_agent = ResearchAgent(gemini_client=self.gemini)
+        self.coding_agent = CodingAgent(gemini_client=self.gemini)
+        self.coordinator = CoordinatorAgent(
+            research_agent=self.research_agent,
+            coding_agent=self.coding_agent,
+            gemini_client=self.gemini
+        )
 
     async def process_query(self, query: str) -> str:
         """
-        Process a user query and return the result.
+        Process a user query using the Coordinator Agent.
 
         Args:
             query: The user's query
@@ -117,46 +143,61 @@ class MultiModeAssistant:
         Returns:
             Markdown-formatted result
         """
-        # Determine intent
+        # If forced mode, route directly to specific agent
         if self.forced_mode:
             if self.forced_mode == "coding":
-                intent = Intent.CODING
-                confidence = 1.0
-                reason = "Forced coding mode"
-            else:
-                intent = Intent.RESEARCH
-                confidence = 1.0
-                reason = "Forced research mode"
-
-            console.print(Panel(
-                f"[green]Mode:[/green] {intent.value.upper()}\n[dim](forced)[/dim]",
-                title="[bold cyan]Router[/bold cyan]",
-                border_style="cyan"
-            ))
-        else:
-            intent, confidence, reason = await classify_intent(query, show_ui=True)
-
-        # Route to appropriate agent
-        console.print()
-
+                console.print(Panel(
+                    f"[green]Mode:[/green] CODING\\n[dim](forced)[/dim]",
+                    title="[bold magenta]Coding Agent[/bold magenta]",
+                    border_style="magenta"
+                ))
+                
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[magenta]Coding Agent processing...[/magenta]"),
+                    console=console,
+                    transient=True,
+                ) as progress:
+                    progress.add_task("", total=None)
+                    result = await self.coding_agent.process(query)
+                
+                return result
+                
+            else:  # research mode
+                console.print(Panel(
+                    f"[green]Mode:[/green] RESEARCH\\n[dim](forced)[/dim]",
+                    title="[bold blue]Research Agent[/bold blue]",
+                    border_style="blue"
+                ))
+                
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[blue]Research Agent processing...[/blue]"),
+                    console=console,
+                    transient=True,
+                ) as progress:
+                    progress.add_task("", total=None)
+                    result_obj = await self.research_agent.research(query)
+                    result = result_obj.report
+                
+                return result
+        
+        # Use Coordinator for intelligent routing
+        console.print(Panel(
+            "[green]Using Coordinator Agent for intelligent routing[/green]",
+            title="[bold cyan]🤖 Coordinator[/bold cyan]",
+            border_style="cyan"
+        ))
+        
         with Progress(
             SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
+            TextColumn("[cyan]Coordinator analyzing and processing...[/cyan]"),
             console=console,
             transient=True,
         ) as progress:
-            if intent == Intent.CODING:
-                progress.add_task(
-                    f"[magenta]Routing to Coding Agent...[/magenta]",
-                    total=None
-                )
-                await asyncio.sleep(0.5)  # Brief pause for visual feedback
-
-        if intent == Intent.CODING:
-            result = await run_coding_agent(query)
-        else:
-            result = await run_research_agent(query, use_mock=self.use_mock)
-
+            progress.add_task("", total=None)
+            result = await self.coordinator.process_request(query)
+        
         return result
 
 
