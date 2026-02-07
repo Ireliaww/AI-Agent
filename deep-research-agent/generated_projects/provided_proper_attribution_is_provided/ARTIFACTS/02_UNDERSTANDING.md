@@ -5,10 +5,10 @@
 ### Problem Statement
 Based on the provided context, the main contributions of this paper are:
 
-*   **Introduction of the Transformer model:** The paper presents the Transformer, the first sequence transduction model based
+*   The introduction of the Transformer, which is presented as the first sequence transduction model based entirely on attenti
 
 ### Solution Approach
-The proposed methodology is the Transformer, which is described as the first sequence transduction model based entirely on attention. It replaces the recurrent layers commonly used in encoder-decoder 
+The proposed methodology is the **Transformer**, which is described as the first sequence transduction model based entirely on attention. It replaces the recurrent layers commonly used in encoder-deco
 
 ### Why It Works
 This approach is effective because it addresses the core limitations

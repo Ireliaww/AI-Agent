@@ -392,11 +392,32 @@ class EnhancedResearchAgent:
         
         # Display web research results
         if web_research_result and web_research_result.success:
-            print("\n" + "="*80)
-            print("🌐 WEB RESEARCH COMPLETE")
-            print("="*80)
-            print(f"\n{web_research_result.report}\n")
-            print("="*80 + "\n")
+            from rich.console import Console
+            from rich.panel import Panel
+            from rich.markdown import Markdown
+            from rich.box import DOUBLE
+            
+            console = Console()
+            
+            # Create beautiful header
+            console.print()
+            console.print(Panel.fit(
+                "[bold cyan]🌐 WEB RESEARCH COMPLETE[/bold cyan]",
+                border_style="cyan",
+                box=DOUBLE
+            ))
+            console.print()
+            
+            # Display the research report with markdown formatting
+            md = Markdown(web_research_result.report)
+            console.print(Panel(
+                md,
+                title="[bold green]📊 Research Report[/bold green]",
+                border_style="green",
+                padding=(1, 2)
+            ))
+            console.print()
+
         
         # Continue with existing workflow...
         print("📊 Continuing with RAG queries and paper understanding...")
