@@ -162,6 +162,14 @@ Please write clean, well-documented code to solve this problem. Include:
                     framework="pytorch"
                 )
                 
+                # Show what we're sending to coding agent (verbose mode)
+                console.print("\n[bold cyan]📤 Sending to Coding Agent:[/bold cyan]")
+                console.print(f"[dim]Title:[/dim] {paper_analysis.content.title}")
+                console.print(f"[dim]Authors:[/dim] {', '.join(paper_analysis.content.authors[:3])}")
+                console.print(f"[dim]Contributions:[/dim] {paper_analysis.understanding.contributions[:150]}...")
+                console.print(f"[dim]Methodology:[/dim] {paper_analysis.understanding.methodology[:150]}...")
+                console.print(f"[dim]Framework:[/dim] PyTorch\n")
+                
                 implementation = await self.coding_agent.implement_from_paper(
                     paper_analysis,
                     framework="pytorch"  # Default to PyTorch
