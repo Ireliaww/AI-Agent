@@ -145,7 +145,7 @@ class EnhancedCodingAgent:
         progress_display.show_step_header(2, "Model Architecture Generation", 5)
         progress_display.show_ai_thinking(
             f"Analyzing paper methodology to design {framework} model architecture...\n"
-            f"Key components identified: {understanding.methodology[:100]}...",
+            f"Key components identified: {understanding.methodology}",
             "Model Design"
         )
         
@@ -160,7 +160,7 @@ class EnhancedCodingAgent:
         progress_display.show_step_header(3, "Training Script Generation", 5)
         progress_display.show_ai_thinking(
             f"Creating training pipeline based on experimental setup...\n"
-            f"Experiments: {understanding.experiments[:100]}...",
+            f"Experiments: {understanding.experiments}",
             "Training Setup"
         )
         

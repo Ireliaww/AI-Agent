@@ -166,8 +166,8 @@ Please write clean, well-documented code to solve this problem. Include:
                 console.print("\n[bold cyan]📤 Sending to Coding Agent:[/bold cyan]")
                 console.print(f"[dim]Title:[/dim] {paper_analysis.content.title}")
                 console.print(f"[dim]Authors:[/dim] {', '.join(paper_analysis.content.authors[:3])}")
-                console.print(f"[dim]Contributions:[/dim] {paper_analysis.understanding.contributions[:150]}...")
-                console.print(f"[dim]Methodology:[/dim] {paper_analysis.understanding.methodology[:150]}...")
+                console.print(f"[dim]Contributions:[/dim] {paper_analysis.understanding.contributions}")
+                console.print(f"[dim]Methodology:[/dim] {paper_analysis.understanding.methodology}")
                 console.print(f"[dim]Framework:[/dim] PyTorch\n")
                 
                 implementation = await self.coding_agent.implement_from_paper(
