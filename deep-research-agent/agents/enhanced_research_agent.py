@@ -367,7 +367,7 @@ class EnhancedResearchAgent:
             research_query = f'Research the paper "{paper_input}" including tutorials, explanations, blog posts, and implementation guides'
             print(f"🔍 [Web Research] Query: {research_query}\n")
             
-            research_result = await research_agent.research(research_query, max_iterations=2)
+            research_result = await research_agent.research(research_query)
             return research_result
         
         # Run both in parallel
