@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 
 from tools.pdf_parser import PDFParser, PaperContent
 from tools.academic_search import AcademicSearchTools, Paper, CodeImplementation
+from tools.web_searcher import WebSearcher, SearchResult
 from rag.vector_store.chroma_store import ChromaVectorStore
 from rag.pdf_processor.text_chunker import TextChunker
 from src.client import GeminiClient
@@ -81,6 +82,7 @@ class EnhancedResearchAgent:
         self.use_mock = use_mock
         self.pdf_parser = PDFParser()
         self.academic_search = AcademicSearchTools()
+        self.web_searcher = WebSearcher()  # Web search for blogs, tutorials, etc.
         self.text_chunker = TextChunker(min_tokens=300, max_tokens=500)
         
         # Current paper's vector store (set during analysis)
@@ -342,30 +344,69 @@ class EnhancedResearchAgent:
                 results="See paper results section"
             )
         
-        # Step 5: Search related work
-        print("\n🔗 Searching related work...")
-        related_papers = await self.academic_search.search_arxiv(
+        # Step 5: Search related work (parallel execution)
+        print("\n🔗 Searching related work (parallel: arXiv + Papers with Code + Web)...")
+        
+        import asyncio
+        
+        # Run all searches in parallel for speed
+        related_papers_task = self.academic_search.search_arxiv(
             paper_content.title,
             max_results=5
         )
         
-        implementations = await self.academic_search.search_papers_with_code(
+        implementations_task = self.academic_search.search_papers_with_code(
             paper_content.title
         )
         
+        print("  🌐 Starting web search for tutorials, blogs, and discussions...")
+        web_resources_task = self.web_searcher.search_paper_resources(
+            paper_content.title,
+            max_results=5
+        )
         
-        print(f"✓ Found {len(related_papers)} related papers")
+        # Wait for all searches to complete
+        related_papers, implementations, web_resources = await asyncio.gather(
+            related_papers_task,
+            implementations_task,
+            web_resources_task,
+            return_exceptions=True
+        )
+        
+        # Handle potential errors
+        if isinstance(related_papers, Exception):
+            print(f"⚠️  arXiv search error: {related_papers}")
+            related_papers = []
+        if isinstance(implementations, Exception):
+            print(f"⚠️  Papers with Code error: {implementations}")
+            implementations = []
+        if isinstance(web_resources, Exception):
+            print(f"⚠️  Web search error: {web_resources}")
+            web_resources = {}
+        
+        # Display results
+        print(f"\n✓ Found {len(related_papers)} related papers (arXiv)")
         if related_papers:
             for i, paper in enumerate(related_papers[:3], 1):
                 print(f"  {i}. {paper.title}")
                 print(f"     Authors: {', '.join(paper.authors[:3])}")
                 print(f"     arXiv: {paper.arxiv_id}")
         
-        print(f"✓ Found {len(implementations)} code implementations")
+        print(f"\n✓ Found {len(implementations)} code implementations (Papers with Code)")
         if implementations:
             for i, impl in enumerate(implementations[:3], 1):
                 print(f"  {i}. {impl.repo_name} ({impl.stars} ⭐)")
                 print(f"     URL: {impl.repo_url}")
+        
+        # Display web search results
+        print(f"\n✓ Found web resources:")
+        if web_resources:
+            for category, results in web_resources.items():
+                if results:
+                    print(f"  📝 {category.title()}: {len(results)} results")
+                    for result in results[:2]:  # Show top 2 per category
+                        print(f"      • {result.title}")
+                        print(f"        {result.url}")
         
         
         # Save artifacts if artifact_manager provided
