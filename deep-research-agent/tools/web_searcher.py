@@ -152,26 +152,50 @@ class WebSearcher:
             "videos": []
         }
         
-        # Search for tutorials
-        print(f"  🔍 Searching for tutorials about: {paper_title}")
-        results["tutorials"] = await self.search(
-            f"{paper_title} tutorial implementation",
-            count=max_results
+        # Combined search query to avoid rate limits (429)
+        # We search once and categorize results client-side
+        print(f"  🔍 Searching for resources about: {paper_title}")
+        
+        search_query = f'"{paper_title}" tutorials implementation explanation blog reddit'
+        
+        # Get more results to filter from
+        all_results = await self.search(
+            search_query,
+            count=20  # Fetch more to categorize
         )
         
-        # Search for blog posts
-        print(f"  🔍 Searching for blog posts...")
-        results["blog_posts"] = await self.search(
-            f"{paper_title} blog post explained",
-            count=max_results
-        )
+        # Categorize results
+        for result in all_results:
+            lower_title = result.title.lower()
+            lower_desc = result.description.lower()
+            lower_url = result.url.lower()
+            
+            # Helper to check keywords
+            def has_keyword(text, keywords):
+                return any(k in text for k in keywords)
+            
+            # Categorize based on keywords in URL/Title/Description
+            if has_keyword(lower_url, ["reddit", "news.ycombinator.com", "forum", "discuss"]) or \
+               has_keyword(lower_title, ["discussion", "thread", "comment"]):
+                results["discussions"].append(result)
+                
+            elif has_keyword(lower_title, ["tutorial", "guide", "how to", "walkthrough", "step-by-step"]) or \
+                 has_keyword(lower_desc, ["tutorial", "guide", "implementation"]):
+                results["tutorials"].append(result)
+                
+            elif has_keyword(lower_url, ["medium.com", "blog", "substack"]) or \
+                 has_keyword(lower_title, ["explained", "understanding", "overview", "review"]):
+                results["blog_posts"].append(result)
+            
+            else:
+                # Default to blog posts if it looks like content
+                results["blog_posts"].append(result)
         
-        # Search for discussions
-        print(f"  🔍 Searching for discussions...")
-        results["discussions"] = await self.search(
-            f"{paper_title} reddit discussion",
-            count=max_results
-        )
+        # Limit results per category
+        for key in results:
+            results[key] = results[key][:max_results]
+            
+        print(f"  ✓ Found {sum(len(l) for l in results.values())} resources")
         
         return results
 

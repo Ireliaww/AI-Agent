@@ -1,507 +1,574 @@
-The Transformer model, as described in "Attention Is All You Need" by Vaswani et al. (2017), is a groundbreaking sequence transduction model built entirely on attention mechanisms, eschewing recurrent or convolutional layers. It consists of an encoder-decoder architecture where both components are composed of stacked identical layers.
+Here's a complete PyTorch implementation of the Transformer model as described in "Attention Is All You Need" (Vaswani et al., 2017), adhering to your requirements.
 
-Here's a complete PyTorch implementation of the Transformer model, following the exact architecture and best practices, including detailed docstrings and type hints.
-
----
-
-### Transformer Model PyTorch Implementation
+This implementation breaks down the Transformer into its core components, making it modular and easy to understand.
 
 ```python
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
-from typing import Optional, Tuple
 
-# --- Helper Module: SublayerConnection (Residual Connection + Layer Normalization) ---
-class SublayerConnection(nn.Module):
-    """
-    A residual connection followed by a layer normalization.
-    Note for code simplicity the norm is first, then the sublayer.
-    (This is a common variant and often performs similarly or better than pre-norm).
-    """
-    def __init__(self, size: int, dropout_rate: float):
-        """
-        Initializes the SublayerConnection.
-
-        Args:
-            size (int): The dimensionality of the input and output (d_model).
-            dropout_rate (float): The dropout probability.
-        """
-        super().__init__()
-        self.norm = nn.LayerNorm(size)
-        self.dropout = nn.Dropout(dropout_rate)
-
-    def forward(self, x: torch.Tensor, sublayer: nn.Module) -> torch.Tensor:
-        """
-        Applies the sublayer, dropout, and adds it to the input with layer normalization.
-
-        Args:
-            x (torch.Tensor): The input tensor to the sublayer.
-            sublayer (nn.Module): The sublayer function (e.g., MultiHeadAttention, PositionwiseFeedForward).
-
-        Returns:
-            torch.Tensor: The output tensor after applying sublayer, dropout, and residual connection with normalization.
-        """
-        # Original paper: x + dropout(sublayer(norm(x)))
-        # Pre-norm variant (often used in modern implementations): norm(x + dropout(sublayer(x)))
-        # Here we follow the common "post-norm" interpretation from the paper, but apply norm *before* the residual.
-        # This is equivalent to: x + self.dropout(sublayer(self.norm(x)))
-        return x + self.dropout(sublayer(self.norm(x)))
-
-
-# --- 1. Embeddings and Positional Encoding ---
 class PositionalEncoding(nn.Module):
     """
     Implements the sinusoidal positional encoding as described in the paper.
-    This adds a signal to the input embeddings that depends on the position of the token.
+    This module injects information about the relative or absolute position
+    of tokens in the sequence, as the Transformer does not use recurrence
+    or convolution.
+
+    The positional encoding is added to the input embeddings.
     """
-    def __init__(self, d_model: int, dropout_rate: float, max_len: int = 5000):
+    def __init__(self, d_model: int, max_len: int = 5000, dropout: float = 0.1):
         """
-        Initializes the PositionalEncoding layer.
+        Initializes the PositionalEncoding module.
 
         Args:
-            d_model (int): The dimensionality of the model (embedding dimension).
-            dropout_rate (float): The dropout probability.
-            max_len (int): The maximum sequence length for which to generate positional encodings.
+            d_model (int): The dimension of the model's embeddings (e.g., 512).
+            max_len (int): The maximum sequence length for which to generate
+                           positional encodings. This pre-computes the encodings.
+            dropout (float): Dropout rate to apply to the output of positional encoding.
         """
         super().__init__()
-        self.dropout = nn.Dropout(p=dropout_rate)
+        self.dropout = nn.Dropout(p=dropout)
 
         # Compute the positional encodings once in log space.
         pe = torch.zeros(max_len, d_model)
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
         div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0)  # Add batch dimension: (1, max_len, d_model)
+        
+        pe = pe.unsqueeze(0) # Add batch dimension: (1, max_len, d_model)
         self.register_buffer('pe', pe) # Register as a buffer, not a parameter
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Adds positional encodings to the input embeddings.
+        Adds positional encoding to the input tensor.
 
         Args:
-            x (torch.Tensor): The input tensor of shape (batch_size, seq_len, d_model).
+            x (torch.Tensor): Input tensor of shape (batch_size, seq_len, d_model).
 
         Returns:
-            torch.Tensor: The input tensor with added positional encodings, shape (batch_size, seq_len, d_model).
+            torch.Tensor: Tensor with positional encodings added, of shape
+                          (batch_size, seq_len, d_model).
         """
-        x = x + self.pe[:, :x.size(1)] # Add PE up to the current sequence length
+        # x has shape (batch_size, seq_len, d_model)
+        # self.pe has shape (1, max_len, d_model)
+        # We take the first 'seq_len' positional encodings
+        x = x + self.pe[:, :x.size(1)]
         return self.dropout(x)
 
-class Embeddings(nn.Module):
+class ScaledDotProductAttention(nn.Module):
     """
-    Combines token embeddings and positional encodings.
-    """
-    def __init__(self, vocab_size: int, d_model: int, dropout_rate: float, max_len: int = 5000):
-        """
-        Initializes the Embeddings layer.
+    Computes scaled dot-product attention.
 
-        Args:
-            vocab_size (int): The size of the vocabulary.
-            d_model (int): The dimensionality of the model (embedding dimension).
-            dropout_rate (float): The dropout probability for positional encoding.
-            max_len (int): Maximum sequence length for positional encoding.
-        """
+    Attention(Q, K, V) = softmax( (Q @ K^T) / sqrt(d_k) ) @ V
+
+    This module handles the core attention mechanism, including optional masking.
+    """
+    def __init__(self):
         super().__init__()
-        self.embedding = nn.Embedding(vocab_size, d_model)
-        self.positional_encoding = PositionalEncoding(d_model, dropout_rate, max_len)
-        self.d_model = d_model
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, 
+                mask: torch.Tensor = None) -> torch.Tensor:
         """
-        Performs token embedding lookup and adds positional encodings.
+        Calculates scaled dot-product attention.
 
         Args:
-            x (torch.Tensor): Input tensor of token IDs, shape (batch_size, seq_len).
+            q (torch.Tensor): Query tensor of shape (batch_size, n_heads, seq_len_q, d_k).
+            k (torch.Tensor): Key tensor of shape (batch_size, n_heads, seq_len_k, d_k).
+            v (torch.Tensor): Value tensor of shape (batch_size, n_heads, seq_len_v, d_v).
+                              Note: seq_len_k must be equal to seq_len_v.
+            mask (torch.Tensor, optional): Mask tensor of shape (batch_size, 1, seq_len_q, seq_len_k)
+                                           or (1, 1, seq_len_q, seq_len_k).
+                                           Masked positions will be set to a very small negative
+                                           number before softmax, effectively ignoring them.
+                                           Defaults to None.
 
         Returns:
-            torch.Tensor: Output tensor with embeddings and positional encodings,
-                          shape (batch_size, seq_len, d_model).
+            torch.Tensor: Output tensor of shape (batch_size, n_heads, seq_len_q, d_v).
         """
-        # Scale the embeddings by sqrt(d_model) as per the paper
-        return self.positional_encoding(self.embedding(x) * math.sqrt(self.d_model))
+        d_k = q.size(-1)
+        
+        # (batch_size, n_heads, seq_len_q, seq_len_k)
+        scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(d_k)
 
+        if mask is not None:
+            # Masking: wherever mask is True (or 1), set scores to a very small negative value.
+            # This ensures that after softmax, these positions will have probabilities close to 0.
+            scores = scores.masked_fill(mask == 0, -1e9) 
+            # Note: The original paper uses mask==0 to indicate positions to be masked out (e.g., padding).
+            # For look-ahead mask, it's typically 0 for positions to be ignored.
 
-# --- 2. Multi-Head Attention Mechanism ---
-def attention(query: torch.Tensor, key: torch.Tensor, value: torch.Tensor,
-              mask: Optional[torch.Tensor] = None, dropout: Optional[nn.Dropout] = None) -> Tuple[torch.Tensor, torch.Tensor]:
-    """
-    Computes the Scaled Dot-Product Attention.
-
-    Args:
-        query (torch.Tensor): Query tensor, shape (batch_size, n_heads, seq_len_q, d_k).
-        key (torch.Tensor): Key tensor, shape (batch_size, n_heads, seq_len_k, d_k).
-        value (torch.Tensor): Value tensor, shape (batch_size, n_heads, seq_len_v, d_v).
-                              Note: seq_len_k must be equal to seq_len_v.
-        mask (torch.Tensor, optional): Mask tensor, shape (batch_size, 1, 1, seq_len_k) or (batch_size, 1, seq_len_q, seq_len_k).
-                                       Masked positions will be set to -inf.
-        dropout (nn.Dropout, optional): Dropout layer to apply to attention weights.
-
-    Returns:
-        Tuple[torch.Tensor, torch.Tensor]: A tuple containing:
-            - output (torch.Tensor): Weighted sum of values, shape (batch_size, n_heads, seq_len_q, d_v).
-            - attn_weights (torch.Tensor): Attention weights, shape (batch_size, n_heads, seq_len_q, seq_len_k).
-    """
-    d_k = query.size(-1)
-    # (batch_size, n_heads, seq_len_q, d_k) @ (batch_size, n_heads, d_k, seq_len_k)
-    scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
-
-    if mask is not None:
-        # Apply mask by setting masked positions to a very small number (-inf)
-        scores = scores.masked_fill(mask == 0, -1e9) # Assuming mask is 0 for padded/future tokens
-
-    p_attn = F.softmax(scores, dim=-1) # (batch_size, n_heads, seq_len_q, seq_len_k)
-
-    if dropout is not None:
-        p_attn = dropout(p_attn)
-
-    return torch.matmul(p_attn, value), p_attn # (batch_size, n_heads, seq_len_q, d_v)
+        attention_weights = F.softmax(scores, dim=-1)
+        output = torch.matmul(attention_weights, v) # (batch_size, n_heads, seq_len_q, d_v)
+        return output
 
 class MultiHeadAttention(nn.Module):
     """
-    Implements the Multi-Head Attention mechanism.
-    Projects Q, K, V linearly, splits into multiple heads, applies attention,
-    concatenates heads, and applies a final linear projection.
+    Implements Multi-Head Attention mechanism.
+    It projects the queries, keys, and values h times with different, learned
+    linear projections to d_k, d_k, and d_v dimensions, respectively.
+    On each of these projected versions of queries, keys, and values,
+    attention function is applied in parallel, yielding h output values.
+    These are concatenated and once again projected, resulting in the final values.
+
+    MultiHead(Q, K, V) = Concat(head_1, ..., head_h) @ W_O
+    where head_i = Attention(Q @ W_Q_i, K @ W_K_i, V @ W_V_i)
     """
-    def __init__(self, d_model: int, n_heads: int, dropout_rate: float = 0.1):
+    def __init__(self, d_model: int, n_heads: int, dropout: float = 0.1):
         """
-        Initializes the MultiHeadAttention layer.
+        Initializes the MultiHeadAttention module.
 
         Args:
-            d_model (int): The dimensionality of the model (embedding dimension).
-            n_heads (int): The number of attention heads.
-            dropout_rate (float): The dropout probability.
+            d_model (int): The dimension of the model's embeddings (e.g., 512).
+            n_heads (int): The number of attention heads (e.g., 8).
+            dropout (float): Dropout rate to apply to the attention weights.
         """
         super().__init__()
         assert d_model % n_heads == 0, "d_model must be divisible by n_heads"
 
-        self.d_k = d_model // n_heads # Dimension of K, Q for each head
+        self.d_k = d_model // n_heads # Dimension of K and Q for each head
+        self.d_v = d_model // n_heads # Dimension of V for each head
         self.n_heads = n_heads
-        self.linears = nn.ModuleList([nn.Linear(d_model, d_model) for _ in range(4)]) # W_q, W_k, W_v, W_o
-        self.dropout = nn.Dropout(p=dropout_rate)
+        self.d_model = d_model
 
-    def forward(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor,
-                mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+        # Linear projections for Q, K, V
+        self.w_q = nn.Linear(d_model, d_model)
+        self.w_k = nn.Linear(d_model, d_model)
+        self.w_v = nn.Linear(d_model, d_model)
+        
+        # Final linear projection for the concatenated outputs
+        self.w_o = nn.Linear(d_model, d_model)
+
+        self.attention = ScaledDotProductAttention()
+        self.dropout = nn.Dropout(p=dropout)
+
+    def forward(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, 
+                mask: torch.Tensor = None) -> torch.Tensor:
         """
         Performs multi-head attention.
 
         Args:
-            query (torch.Tensor): Query tensor, shape (batch_size, seq_len_q, d_model).
-            key (torch.Tensor): Key tensor, shape (batch_size, seq_len_k, d_model).
-            value (torch.Tensor): Value tensor, shape (batch_size, seq_len_v, d_model).
-            mask (torch.Tensor, optional): Mask tensor, shape (batch_size, 1, seq_len_q, seq_len_k)
-                                           or (batch_size, 1, 1, seq_len_k).
+            q (torch.Tensor): Query tensor of shape (batch_size, seq_len_q, d_model).
+            k (torch.Tensor): Key tensor of shape (batch_size, seq_len_k, d_model).
+            v (torch.Tensor): Value tensor of shape (batch_size, seq_len_v, d_model).
+            mask (torch.Tensor, optional): Mask tensor for attention scores.
+                                           Shape (batch_size, 1, seq_len_q, seq_len_k)
+                                           or (1, 1, seq_len_q, seq_len_k). Defaults to None.
 
         Returns:
-            torch.Tensor: Output tensor after multi-head attention, shape (batch_size, seq_len_q, d_model).
+            torch.Tensor: Output tensor of shape (batch_size, seq_len_q, d_model).
         """
-        if mask is not None:
-            # Same mask applied to all heads
-            mask = mask.unsqueeze(1) # Add head dimension (batch_size, 1, seq_len_q, seq_len_k)
+        batch_size = q.size(0)
 
-        batch_size = query.size(0)
+        # 1. Apply linear projections and reshape for multi-head attention
+        # (batch_size, seq_len, d_model) -> (batch_size, seq_len, n_heads, d_k/d_v)
+        # -> (batch_size, n_heads, seq_len, d_k/d_v)
+        q = self.w_q(q).view(batch_size, -1, self.n_heads, self.d_k).transpose(1, 2)
+        k = self.w_k(k).view(batch_size, -1, self.n_heads, self.d_k).transpose(1, 2)
+        v = self.w_v(v).view(batch_size, -1, self.n_heads, self.d_v).transpose(1, 2)
 
-        # 1) Do all the linear projections in batch from d_model => n_heads x d_k
-        # (batch_size, seq_len, d_model) -> (batch_size, seq_len, n_heads, d_k) -> (batch_size, n_heads, seq_len, d_k)
-        query, key, value = [
-            l(x).view(batch_size, -1, self.n_heads, self.d_k).transpose(1, 2)
-            for l, x in zip(self.linears[:3], (query, key, value))
-        ]
+        # 2. Apply scaled dot-product attention
+        # (batch_size, n_heads, seq_len_q, d_v)
+        attn_output = self.attention(q, k, v, mask=mask)
 
-        # 2) Apply attention on all the projected vectors in batch.
-        x, self.attn_weights = attention(query, key, value, mask=mask, dropout=self.dropout)
+        # 3. Concatenate heads and apply final linear projection
+        # (batch_size, n_heads, seq_len_q, d_v) -> (batch_size, seq_len_q, n_heads, d_v)
+        # -> (batch_size, seq_len_q, d_model)
+        attn_output = attn_output.transpose(1, 2).contiguous().view(batch_size, -1, self.d_model)
+        
+        output = self.w_o(attn_output) # (batch_size, seq_len_q, d_model)
+        return self.dropout(output)
 
-        # 3) "Concat" using a view and apply a final linear.
-        # (batch_size, n_heads, seq_len_q, d_k) -> (batch_size, seq_len_q, n_heads, d_k) -> (batch_size, seq_len_q, d_model)
-        x = x.transpose(1, 2).contiguous().view(batch_size, -1, self.n_heads * self.d_k)
-
-        return self.linears[-1](x) # Final linear projection W_o
-
-
-# --- 3. Position-wise Feed-Forward Network ---
-class PositionwiseFeedForward(nn.Module):
+class PositionWiseFeedForward(nn.Module):
     """
-    Implements the position-wise feed-forward network, consisting of two linear transformations
-    with a ReLU activation in between.
+    Implements the position-wise feed-forward network (FFN).
+    This consists of two linear transformations with a ReLU activation in between.
+    It is applied to each position separately and identically.
+
+    FFN(x) = max(0, x @ W1 + b1) @ W2 + b2
     """
-    def __init__(self, d_model: int, d_ff: int, dropout_rate: float = 0.1):
+    def __init__(self, d_model: int, d_ff: int, dropout: float = 0.1):
         """
-        Initializes the PositionwiseFeedForward layer.
+        Initializes the PositionWiseFeedForward module.
 
         Args:
-            d_model (int): The dimensionality of the model (input/output dimension).
-            d_ff (int): The dimensionality of the inner-layer (hidden dimension).
-            dropout_rate (float): The dropout probability.
+            d_model (int): The dimension of the model's embeddings (e.g., 512).
+            d_ff (int): The dimension of the inner layer of the FFN (e.g., 2048).
+            dropout (float): Dropout rate to apply after the second linear layer.
         """
         super().__init__()
         self.w_1 = nn.Linear(d_model, d_ff)
         self.w_2 = nn.Linear(d_ff, d_model)
-        self.dropout = nn.Dropout(dropout_rate)
+        self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Applies the feed-forward network to the input.
+        Applies the position-wise feed-forward network to the input.
 
         Args:
-            x (torch.Tensor): Input tensor, shape (batch_size, seq_len, d_model).
+            x (torch.Tensor): Input tensor of shape (batch_size, seq_len, d_model).
 
         Returns:
-            torch.Tensor: Output tensor, shape (batch_size, seq_len, d_model).
+            torch.Tensor: Output tensor of shape (batch_size, seq_len, d_model).
         """
+        # (batch_size, seq_len, d_model) -> (batch_size, seq_len, d_ff) -> (batch_size, seq_len, d_model)
         return self.w_2(self.dropout(F.relu(self.w_1(x))))
 
-
-# --- 4. Encoder Layer ---
 class EncoderLayer(nn.Module):
     """
-    One layer of the Transformer encoder.
-    Consists of a Multi-Head Self-Attention sublayer and a Position-wise Feed-Forward sublayer,
-    each followed by residual connections and layer normalization.
+    Represents a single layer of the Transformer Encoder.
+    It consists of two sub-layers:
+    1. Multi-head self-attention mechanism.
+    2. Position-wise fully connected feed-forward network.
+
+    Each sub-layer is followed by a residual connection and layer normalization.
     """
-    def __init__(self, d_model: int, n_heads: int, d_ff: int, dropout_rate: float):
+    def __init__(self, d_model: int, n_heads: int, d_ff: int, dropout: float = 0.1):
         """
         Initializes an EncoderLayer.
 
         Args:
-            d_model (int): The dimensionality of the model.
+            d_model (int): The dimension of the model's embeddings.
             n_heads (int): The number of attention heads.
-            d_ff (int): The dimensionality of the inner feed-forward layer.
-            dropout_rate (float): The dropout probability.
+            d_ff (int): The dimension of the inner layer of the FFN.
+            dropout (float): Dropout rate.
         """
         super().__init__()
-        self.self_attn = MultiHeadAttention(d_model, n_heads, dropout_rate)
-        self.feed_forward = PositionwiseFeedForward(d_model, d_ff, dropout_rate)
-        self.sublayer_connections = nn.ModuleList([
-            SublayerConnection(d_model, dropout_rate) for _ in range(2)
-        ])
-        self.d_model = d_model
+        self.self_attn = MultiHeadAttention(d_model, n_heads, dropout)
+        self.feed_forward = PositionWiseFeedForward(d_model, d_ff, dropout)
+        
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        
+        self.dropout1 = nn.Dropout(p=dropout)
+        self.dropout2 = nn.Dropout(p=dropout)
 
-    def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor]) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, src_mask: torch.Tensor) -> torch.Tensor:
         """
-        Performs a forward pass through one encoder layer.
+        Performs a forward pass through the encoder layer.
 
         Args:
-            x (torch.Tensor): Input tensor, shape (batch_size, seq_len, d_model).
-            mask (torch.Tensor, optional): Source padding mask, shape (batch_size, 1, 1, seq_len_src).
-                                          Masks padded positions (0 for masked, 1 for unmasked).
+            x (torch.Tensor): Input tensor from the previous layer,
+                              shape (batch_size, src_seq_len, d_model).
+            src_mask (torch.Tensor): Source mask for self-attention,
+                                     shape (batch_size, 1, 1, src_seq_len) or 
+                                     (batch_size, 1, src_seq_len, src_seq_len).
+                                     Used to mask out padding tokens.
 
         Returns:
-            torch.Tensor: Output tensor of the encoder layer, shape (batch_size, seq_len, d_model).
+            torch.Tensor: Output tensor of shape (batch_size, src_seq_len, d_model).
         """
-        # Self-attention sublayer
-        x = self.sublayer_connections[0](x, lambda x: self.self_attn(x, x, x, mask))
-        # Feed-forward sublayer
-        x = self.sublayer_connections[1](x, self.feed_forward)
+        # Sub-layer 1: Multi-head self-attention
+        # Apply LayerNorm before attention (pre-norm)
+        norm_x = self.norm1(x)
+        attn_output = self.self_attn(norm_x, norm_x, norm_x, mask=src_mask)
+        x = x + self.dropout1(attn_output) # Add residual connection and dropout
+
+        # Sub-layer 2: Position-wise feed-forward network
+        # Apply LayerNorm before FFN (pre-norm)
+        norm_x = self.norm2(x)
+        ff_output = self.feed_forward(norm_x)
+        x = x + self.dropout2(ff_output) # Add residual connection and dropout
+        
         return x
 
+class Encoder(nn.Module):
+    """
+    The Transformer Encoder, composed of a stack of N identical EncoderLayers.
+    It takes source embeddings and positional encodings as input.
+    """
+    def __init__(self, vocab_size: int, d_model: int, n_layers: int, 
+                 n_heads: int, d_ff: int, dropout: float = 0.1, max_len: int = 5000):
+        """
+        Initializes the Encoder.
 
-# --- 5. Decoder Layer ---
+        Args:
+            vocab_size (int): Size of the source vocabulary.
+            d_model (int): The dimension of the model's embeddings.
+            n_layers (int): The number of encoder layers.
+            n_heads (int): The number of attention heads.
+            d_ff (int): The dimension of the inner layer of the FFN.
+            dropout (float): Dropout rate.
+            max_len (int): Maximum sequence length for positional encoding.
+        """
+        super().__init__()
+        self.embedding = nn.Embedding(vocab_size, d_model)
+        self.pos_encoder = PositionalEncoding(d_model, max_len, dropout)
+        self.layers = nn.ModuleList([
+            EncoderLayer(d_model, n_heads, d_ff, dropout) for _ in range(n_layers)
+        ])
+        self.norm = nn.LayerNorm(d_model) # Final layer normalization
+        self.dropout = nn.Dropout(p=dropout)
+
+    def forward(self, src: torch.Tensor, src_mask: torch.Tensor) -> torch.Tensor:
+        """
+        Performs a forward pass through the Encoder.
+
+        Args:
+            src (torch.Tensor): Source input tensor of token IDs,
+                                shape (batch_size, src_seq_len).
+            src_mask (torch.Tensor): Source mask for self-attention,
+                                     shape (batch_size, 1, 1, src_seq_len) or 
+                                     (batch_size, 1, src_seq_len, src_seq_len).
+                                     Used to mask out padding tokens.
+
+        Returns:
+            torch.Tensor: Output tensor from the last encoder layer,
+                          shape (batch_size, src_seq_len, d_model).
+        """
+        # 1. Input Embedding + Positional Encoding
+        x = self.embedding(src) * math.sqrt(self.norm.normalized_shape[0]) # Scale embeddings
+        x = self.pos_encoder(x)
+        x = self.dropout(x) # Apply dropout after embedding and PE
+
+        # 2. Pass through N encoder layers
+        for layer in self.layers:
+            x = layer(x, src_mask)
+        
+        # 3. Final LayerNorm (as per original paper's implementation details)
+        x = self.norm(x)
+        return x
+
 class DecoderLayer(nn.Module):
     """
-    One layer of the Transformer decoder.
-    Consists of a Masked Multi-Head Self-Attention, a Multi-Head Encoder-Decoder Attention,
-    and a Position-wise Feed-Forward sublayer, each followed by residual connections and layer normalization.
+    Represents a single layer of the Transformer Decoder.
+    It consists of three sub-layers:
+    1. Masked multi-head self-attention mechanism (on target sequence).
+    2. Multi-head attention mechanism over the encoder's output.
+    3. Position-wise fully connected feed-forward network.
+
+    Each sub-layer is followed by a residual connection and layer normalization.
     """
-    def __init__(self, d_model: int, n_heads: int, d_ff: int, dropout_rate: float):
+    def __init__(self, d_model: int, n_heads: int, d_ff: int, dropout: float = 0.1):
         """
         Initializes a DecoderLayer.
 
         Args:
-            d_model (int): The dimensionality of the model.
+            d_model (int): The dimension of the model's embeddings.
             n_heads (int): The number of attention heads.
-            d_ff (int): The dimensionality of the inner feed-forward layer.
-            dropout_rate (float): The dropout probability.
+            d_ff (int): The dimension of the inner layer of the FFN.
+            dropout (float): Dropout rate.
         """
         super().__init__()
-        self.self_attn = MultiHeadAttention(d_model, n_heads, dropout_rate)
-        self.src_attn = MultiHeadAttention(d_model, n_heads, dropout_rate) # Encoder-Decoder Attention
-        self.feed_forward = PositionwiseFeedForward(d_model, d_ff, dropout_rate)
-        self.sublayer_connections = nn.ModuleList([
-            SublayerConnection(d_model, dropout_rate) for _ in range(3)
-        ])
-        self.d_model = d_model
+        self.self_attn = MultiHeadAttention(d_model, n_heads, dropout)
+        self.encoder_attn = MultiHeadAttention(d_model, n_heads, dropout)
+        self.feed_forward = PositionWiseFeedForward(d_model, d_ff, dropout)
+        
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.norm3 = nn.LayerNorm(d_model)
+        
+        self.dropout1 = nn.Dropout(p=dropout)
+        self.dropout2 = nn.Dropout(p=dropout)
+        self.dropout3 = nn.Dropout(p=dropout)
 
-    def forward(self, x: torch.Tensor, memory: torch.Tensor,
-                src_mask: Optional[torch.Tensor], tgt_mask: Optional[torch.Tensor]) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, encoder_output: torch.Tensor, 
+                tgt_mask: torch.Tensor, src_tgt_mask: torch.Tensor) -> torch.Tensor:
         """
-        Performs a forward pass through one decoder layer.
+        Performs a forward pass through the decoder layer.
 
         Args:
-            x (torch.Tensor): Input tensor from the previous decoder layer (or embeddings),
-                              shape (batch_size, seq_len_tgt, d_model).
-            memory (torch.Tensor): Output tensor from the encoder stack,
-                                   shape (batch_size, seq_len_src, d_model).
-            src_mask (torch.Tensor, optional): Source padding mask, shape (batch_size, 1, 1, seq_len_src).
-            tgt_mask (torch.Tensor, optional): Target padding and look-ahead mask,
-                                               shape (batch_size, 1, seq_len_tgt, seq_len_tgt).
+            x (torch.Tensor): Input tensor from the previous decoder layer,
+                              shape (batch_size, tgt_seq_len, d_model).
+            encoder_output (torch.Tensor): Output from the encoder,
+                                           shape (batch_size, src_seq_len, d_model).
+            tgt_mask (torch.Tensor): Mask for decoder self-attention (look-ahead mask combined
+                                     with padding mask),
+                                     shape (batch_size, 1, tgt_seq_len, tgt_seq_len).
+            src_tgt_mask (torch.Tensor): Mask for encoder-decoder attention (padding mask for
+                                         encoder output),
+                                         shape (batch_size, 1, 1, src_seq_len).
 
         Returns:
-            torch.Tensor: Output tensor of the decoder layer, shape (batch_size, seq_len_tgt, d_model).
+            torch.Tensor: Output tensor of shape (batch_size, tgt_seq_len, d_model).
         """
-        # Masked self-attention sublayer (uses tgt_mask)
-        x = self.sublayer_connections[0](x, lambda x: self.self_attn(x, x, x, tgt_mask))
-        # Encoder-decoder attention sublayer (uses src_mask)
-        # Query comes from decoder, Key/Value come from encoder memory
-        x = self.sublayer_connections[1](x, lambda x: self.src_attn(x, memory, memory, src_mask))
-        # Feed-forward sublayer
-        x = self.sublayer_connections[2](x, self.feed_forward)
+        # Sub-layer 1: Masked Multi-head self-attention
+        norm_x = self.norm1(x)
+        attn1 = self.self_attn(norm_x, norm_x, norm_x, mask=tgt_mask)
+        x = x + self.dropout1(attn1)
+
+        # Sub-layer 2: Multi-head encoder-decoder attention
+        # Query from decoder, Key and Value from encoder output
+        norm_x = self.norm2(x)
+        attn2 = self.encoder_attn(norm_x, encoder_output, encoder_output, mask=src_tgt_mask)
+        x = x + self.dropout2(attn2)
+
+        # Sub-layer 3: Position-wise feed-forward network
+        norm_x = self.norm3(x)
+        ff_output = self.feed_forward(norm_x)
+        x = x + self.dropout3(ff_output)
+        
         return x
 
-
-# --- 6. Encoder Stack ---
-class Encoder(nn.Module):
-    """
-    The full Transformer Encoder stack.
-    Composed of N identical EncoderLayers.
-    """
-    def __init__(self, layer: EncoderLayer, N: int):
-        """
-        Initializes the Encoder stack.
-
-        Args:
-            layer (EncoderLayer): An instance of an EncoderLayer to be stacked.
-            N (int): The number of identical EncoderLayers to stack.
-        """
-        super().__init__()
-        self.layers = nn.ModuleList([layer for _ in range(N)])
-        self.norm = nn.LayerNorm(layer.d_model) # Final layer normalization
-
-    def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor]) -> torch.Tensor:
-        """
-        Performs a forward pass through the encoder stack.
-
-        Args:
-            x (torch.Tensor): Input tensor (embeddings + positional encodings),
-                              shape (batch_size, seq_len_src, d_model).
-            mask (torch.Tensor, optional): Source padding mask, shape (batch_size, 1, 1, seq_len_src).
-
-        Returns:
-            torch.Tensor: Output tensor from the encoder stack, shape (batch_size, seq_len_src, d_model).
-        """
-        for layer in self.layers:
-            x = layer(x, mask)
-        return self.norm(x) # Apply final layer norm as per paper (sometimes omitted)
-
-
-# --- 7. Decoder Stack ---
 class Decoder(nn.Module):
     """
-    The full Transformer Decoder stack.
-    Composed of N identical DecoderLayers.
+    The Transformer Decoder, composed of a stack of N identical DecoderLayers.
+    It takes target embeddings, positional encodings, and encoder output as input.
     """
-    def __init__(self, layer: DecoderLayer, N: int):
+    def __init__(self, vocab_size: int, d_model: int, n_layers: int, 
+                 n_heads: int, d_ff: int, dropout: float = 0.1, max_len: int = 5000):
         """
-        Initializes the Decoder stack.
+        Initializes the Decoder.
 
         Args:
-            layer (DecoderLayer): An instance of a DecoderLayer to be stacked.
-            N (int): The number of identical DecoderLayers to stack.
+            vocab_size (int): Size of the target vocabulary.
+            d_model (int): The dimension of the model's embeddings.
+            n_layers (int): The number of decoder layers.
+            n_heads (int): The number of attention heads.
+            d_ff (int): The dimension of the inner layer of the FFN.
+            dropout (float): Dropout rate.
+            max_len (int): Maximum sequence length for positional encoding.
         """
         super().__init__()
-        self.layers = nn.ModuleList([layer for _ in range(N)])
-        self.norm = nn.LayerNorm(layer.d_model) # Final layer normalization
+        self.embedding = nn.Embedding(vocab_size, d_model)
+        self.pos_encoder = PositionalEncoding(d_model, max_len, dropout)
+        self.layers = nn.ModuleList([
+            DecoderLayer(d_model, n_heads, d_ff, dropout) for _ in range(n_layers)
+        ])
+        self.norm = nn.LayerNorm(d_model) # Final layer normalization
+        self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, x: torch.Tensor, memory: torch.Tensor,
-                src_mask: Optional[torch.Tensor], tgt_mask: Optional[torch.Tensor]) -> torch.Tensor:
+    def forward(self, tgt: torch.Tensor, encoder_output: torch.Tensor, 
+                tgt_mask: torch.Tensor, src_tgt_mask: torch.Tensor) -> torch.Tensor:
         """
-        Performs a forward pass through the decoder stack.
+        Performs a forward pass through the Decoder.
 
         Args:
-            x (torch.Tensor): Input tensor (embeddings + positional encodings),
-                              shape (batch_size, seq_len_tgt, d_model).
-            memory (torch.Tensor): Output tensor from the encoder stack,
-                                   shape (batch_size, seq_len_src, d_model).
-            src_mask (torch.Tensor, optional): Source padding mask, shape (batch_size, 1, 1, seq_len_src).
-            tgt_mask (torch.Tensor, optional): Target padding and look-ahead mask,
-                                               shape (batch_size, 1, seq_len_tgt, seq_len_tgt).
+            tgt (torch.Tensor): Target input tensor of token IDs,
+                                shape (batch_size, tgt_seq_len).
+            encoder_output (torch.Tensor): Output from the encoder,
+                                           shape (batch_size, src_seq_len, d_model).
+            tgt_mask (torch.Tensor): Mask for decoder self-attention (look-ahead mask combined
+                                     with padding mask),
+                                     shape (batch_size, 1, tgt_seq_len, tgt_seq_len).
+            src_tgt_mask (torch.Tensor): Mask for encoder-decoder attention (padding mask for
+                                         encoder output),
+                                         shape (batch_size, 1, 1, src_seq_len).
 
         Returns:
-            torch.Tensor: Output tensor from the decoder stack, shape (batch_size, seq_len_tgt, d_model).
+            torch.Tensor: Output tensor from the last decoder layer,
+                          shape (batch_size, tgt_seq_len, d_model).
         """
+        # 1. Input Embedding + Positional Encoding
+        x = self.embedding(tgt) * math.sqrt(self.norm.normalized_shape[0]) # Scale embeddings
+        x = self.pos_encoder(x)
+        x = self.dropout(x) # Apply dropout after embedding and PE
+
+        # 2. Pass through N decoder layers
         for layer in self.layers:
-            x = layer(x, memory, src_mask, tgt_mask)
-        return self.norm(x) # Apply final layer norm as per paper (sometimes omitted)
+            x = layer(x, encoder_output, tgt_mask, src_tgt_mask)
+        
+        # 3. Final LayerNorm (as per original paper's implementation details)
+        x = self.norm(x)
+        return x
 
-
-# --- 8. Transformer Model ---
 class Transformer(nn.Module):
     """
-    The complete Transformer sequence transduction model.
-    Combines Encoder, Decoder, embeddings, and a final linear output layer.
+    The complete Transformer model, an encoder-decoder architecture
+    based entirely on attention mechanisms.
     """
-    def __init__(self, src_vocab_size: int, tgt_vocab_size: int,
-                 d_model: int = 512, n_heads: int = 8, N_layers: int = 6,
-                 d_ff: int = 2048, dropout_rate: float = 0.1):
+    def __init__(self, src_vocab_size: int, tgt_vocab_size: int, d_model: int = 512, 
+                 n_layers: int = 6, n_heads: int = 8, d_ff: int = 2048, 
+                 dropout: float = 0.1, max_len: int = 5000, pad_idx: int = 0):
         """
         Initializes the Transformer model.
 
         Args:
             src_vocab_size (int): Size of the source vocabulary.
             tgt_vocab_size (int): Size of the target vocabulary.
-            d_model (int): Dimensionality of the model's embeddings and hidden states. Default is 512.
-            n_heads (int): Number of attention heads. Default is 8.
-            N_layers (int): Number of identical encoder/decoder layers. Default is 6.
-            d_ff (int): Dimensionality of the inner feed-forward layer. Default is 2048.
-            dropout_rate (float): Dropout probability. Default is 0.1.
+            d_model (int): The dimension of the model's embeddings (default: 512).
+            n_layers (int): The number of encoder and decoder layers (default: 6).
+            n_heads (int): The number of attention heads (default: 8).
+            d_ff (int): The dimension of the inner layer of the FFN (default: 2048).
+            dropout (float): Dropout rate (default: 0.1).
+            max_len (int): Maximum sequence length for positional encoding (default: 5000).
+            pad_idx (int): Index of the padding token in the vocabulary.
+                           Used to create masks. (default: 0).
         """
         super().__init__()
-        # Embeddings for source and target
-        self.src_embed = Embeddings(src_vocab_size, d_model, dropout_rate)
-        self.tgt_embed = Embeddings(tgt_vocab_size, d_model, dropout_rate)
+        self.encoder = Encoder(src_vocab_size, d_model, n_layers, n_heads, d_ff, dropout, max_len)
+        self.decoder = Decoder(tgt_vocab_size, d_model, n_layers, n_heads, d_ff, dropout, max_len)
+        self.generator = nn.Linear(d_model, tgt_vocab_size) # Output layer for token probabilities
+        self.pad_idx = pad_idx
 
-        # Encoder stack
-        encoder_layer = EncoderLayer(d_model, n_heads, d_ff, dropout_rate)
-        self.encoder = Encoder(encoder_layer, N_layers)
+    def _make_src_mask(self, src: torch.Tensor) -> torch.Tensor:
+        """
+        Creates a padding mask for the source sequence.
+        This mask prevents attention to padding tokens.
 
-        # Decoder stack
-        decoder_layer = DecoderLayer(d_model, n_heads, d_ff, dropout_rate)
-        self.decoder = Decoder(decoder_layer, N_layers)
+        Args:
+            src (torch.Tensor): Source input tensor of token IDs,
+                                shape (batch_size, src_seq_len).
 
-        # Final linear layer to project decoder output to target vocabulary size
-        self.generator = nn.Linear(d_model, tgt_vocab_size)
+        Returns:
+            torch.Tensor: Source padding mask,
+                          shape (batch_size, 1, 1, src_seq_len).
+                          True where it's a real token, False where it's padding.
+        """
+        # (batch_size, 1, 1, src_seq_len)
+        # 1 if not pad_idx, 0 if pad_idx
+        src_mask = (src != self.pad_idx).unsqueeze(1).unsqueeze(2)
+        return src_mask
 
-        # Initialize parameters with Glorot / Xavier initialization
-        for p in self.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
+    def _make_tgt_mask(self, tgt: torch.Tensor) -> torch.Tensor:
+        """
+        Creates a combined look-ahead mask and padding mask for the target sequence.
+        The look-ahead mask prevents attending to future tokens during decoding.
+        The padding mask prevents attention to padding tokens.
 
-    def forward(self, src: torch.Tensor, tgt: torch.Tensor,
-                src_mask: Optional[torch.Tensor], tgt_mask: Optional[torch.Tensor]) -> torch.Tensor:
+        Args:
+            tgt (torch.Tensor): Target input tensor of token IDs,
+                                shape (batch_size, tgt_seq_len).
+
+        Returns:
+            torch.Tensor: Target attention mask,
+                          shape (batch_size, 1, tgt_seq_len, tgt_seq_len).
+        """
+        tgt_seq_len = tgt.size(1)
+
+        # Look-ahead mask (upper triangular matrix with 0s on diagonal and below)
+        # (tgt_seq_len, tgt_seq_len)
+        look_ahead_mask = torch.tril(torch.ones(tgt_seq_len, tgt_seq_len)).bool().to(tgt.device)
+        
+        # Padding mask for target sequence
+        # (batch_size, 1, 1, tgt_seq_len) -> (batch_size, 1, tgt_seq_len, 1) after transpose
+        # -> (batch_size, 1, tgt_seq_len, tgt_seq_len) after broadcasting
+        tgt_pad_mask = (tgt != self.pad_idx).unsqueeze(1).unsqueeze(2).bool()
+
+        # Combine masks: element-wise AND
+        # look_ahead_mask is (tgt_seq_len, tgt_seq_len), tgt_pad_mask is (batch_size, 1, 1, tgt_seq_len)
+        # Result will be (batch_size, 1, tgt_seq_len, tgt_seq_len) due to broadcasting
+        tgt_mask = look_ahead_mask & tgt_pad_mask
+        return tgt_mask
+
+    def forward(self, src: torch.Tensor, tgt: torch.Tensor) -> torch.Tensor:
         """
         Performs a forward pass through the entire Transformer model.
 
         Args:
-            src (torch.Tensor): Source input sequence of token IDs, shape (batch_size, seq_len_src).
-            tgt (torch.Tensor): Target input sequence of token IDs (shifted right),
-                                shape (batch_size, seq_len_tgt).
-            src_mask (torch.Tensor, optional): Source padding mask, shape (batch_size, 1, 1, seq_len_src).
-            tgt_mask (torch.Tensor, optional): Target padding and look-ahead mask,
-                                               shape (batch_size, 1, seq_len_tgt, seq_len_tgt).
+            src (torch.Tensor): Source input tensor of token IDs,
+                                shape (batch_size, src_seq_len).
+            tgt (torch.Tensor): Target input tensor of token IDs (shifted right),
+                                shape (batch_size, tgt_seq_len).
 
         Returns:
-            torch.Tensor: Logits for the next token prediction, shape (batch_size, seq_len_tgt, tgt_vocab_size).
+            torch.Tensor: Output logits for the target vocabulary,
+                          shape (batch_size, tgt_seq_len, tgt_vocab_size).
         """
-        # Encode the source sequence
-        encoder_output = self.encode(src, src_mask)
-        # Decode the target sequence using encoder output
-        decoder_output = self.decode(encoder_output, src_mask, tgt, tgt_mask)
-        # Project decoder output to vocabulary size
-        return self.generator(decoder_output)
+        # 1. Create masks
+        src_mask = self._make_src_mask(src) # For encoder self-attention and encoder-decoder attention K, V
+        tgt_mask = self._make_tgt_mask(tgt) # For decoder self-attention Q, K, V
 
-    def encode(self, src: torch.Tensor, src_mask: Optional[torch.Tensor]) -> torch.Tensor:
-        """
-        Encodes the source sequence.
+        # The src_tgt_mask is used in the decoder's encoder-decoder attention.
+        # It masks the *encoder output* (keys and values) based on padding in the *source*.
+        # So, it's essentially the src_mask, but broadcasted correctly for the decoder's cross-attention.
+        # Its shape needs to be (batch_size, 1, tgt_seq_len, src_seq_len)
+        # (src_mask is (batch_size, 1, 1, src_seq_len), which broadcasts correctly against Q of shape (batch, 1, tgt_len, 1))
+        src_tgt_mask = src_mask 
 
-        Args:
-            src (torch.Tensor): Source input sequence of token IDs, shape (batch_size, seq_len_src).
-            src_mask (torch.Tensor, optional): Source padding mask.
+        # 2. Encode source sequence
+        encoder_output = self.encoder(src, src_mask)
 
-        Returns:
-            torch.Tensor: Encoded representation, shape (batch_size, seq_len_src, d_model).
-        """
-        return self.encoder(self.src_embed(src), src_mask)
-
-    def decode(self, memory: torch.Tensor, src_mask: Optional[torch.Tensor],
-               tgt: torch.Tensor, tgt_mask: Optional[torch.Tensor]) -> torch.Tensor:
+        # 3.

@@ -1,452 +1,480 @@
-To generate a complete PyTorch training script that faithfully reproduces the Transformer model's training setup as described in "Attention Is All You Need" and your analysis, we need to consider several key aspects:
+The request asks for a complete PyTorch training script to reproduce the Transformer paper's results, specifically for WMT 2014 English-to-German and English-to-French translation tasks.
 
-1.  **Transformer Model Architecture:** Implement the Encoder-Decoder Transformer model.
-2.  **Hyperparameters:** Use the specific hyperparameters detailed in the original paper for both the "base" and "big" models.
-3.  **Data Loading:** Address WMT 2014 English-to-German and English-to-French. This involves BPE (Byte-Pair Encoding) tokenization, which is crucial for achieving the reported performance.
-4.  **Optimizer & Learning Rate Schedule:** Implement the custom Adam optimizer with a unique learning rate schedule.
-5.  **Loss Function:** Use Cross-Entropy Loss with Label Smoothing.
-6.  **Training Loop:** Standard PyTorch training and validation loops.
-7.  **Logging & Checkpointing:** Track progress and save model states.
-8.  **Evaluation:** Calculate BLEU scores using `sacrebleu`.
+This is a complex task because it requires implementing the full Transformer architecture, its specific learning rate schedule, label smoothing, and handling WMT data with BPE tokenization. The provided analysis only gives datasets, evaluation metrics, and target BLEU scores, but *not* the detailed hyperparameters or the data preparation steps.
 
-**Important Considerations and Simplifications for a Self-Contained Script:**
-
-*   **WMT 2014 Data & BPE:** Downloading and pre-processing WMT 2014 with BPE is a complex step that often involves external tools (`subword-nmt` or `sentencepiece`) and takes significant time. For a self-contained, runnable script, directly integrating `subword-nmt` or `sentencepiece` for *in-script* BPE training/application can make the script very long and require additional setup.
-    *   **Approach taken:** I will provide a simplified data loading setup using `torchtext` with a basic tokenizer (e.g., `spacy`) for demonstration purposes, making the script immediately runnable.
-    *   **Crucial Note:** I will provide clear instructions on how to properly integrate BPE tokenization and use the actual WMT 2014 datasets for true reproduction, as this is *essential* for achieving the reported BLEU scores. Without BPE, the vocabulary size and token representations will be vastly different, leading to much lower performance.
-*   **Hardware:** Training the "big" Transformer model on WMT 2014 requires significant GPU resources (multiple GPUs are typically used, as described in the paper). The script will be set up for a single GPU by default, but can be adapted for DataParallel.
-*   **Time:** Training to state-of-the-art results takes days or weeks. The provided script will run for a few epochs as a demonstration.
+Therefore, I will:
+1.  **Implement the full Transformer architecture** as described in the original paper "Attention Is All You Need."
+2.  **Use the standard hyperparameters** from the paper for both the "base" and "big" models, stating these assumptions clearly.
+3.  **Provide a conceptual outline for WMT data loading and preprocessing** (BPE tokenization, vocabulary building) as these steps are typically external to the core PyTorch training script and involve downloading large datasets and using specific tools (`subword-nmt`).
+4.  **For the actual training loop, I will use a simplified, dummy data generator** to allow the script to run and demonstrate the training process structure. *Users will need to replace this with their actual WMT data loaders.*
+5.  **Include the custom learning rate schedule (Noam optimizer) and label smoothing loss.**
+6.  **Implement a training loop with logging, checkpointing, and validation (using BLEU score).**
+7.  **Structure the code modularly** for readability and maintainability.
 
 ---
 
-### Transformer Training Script (PyTorch)
+### **Assumptions and Important Notes:**
 
-This script provides a modular implementation of the Transformer model and its training loop, incorporating the key elements from "Attention Is All You Need."
+1.  **Hyperparameters:** I'm using the hyperparameters (model dimensions, number of layers, dropout, optimizer settings, learning rate schedule, label smoothing) directly from the "Attention Is All You Need" paper for the "Base" and "Big" Transformer models.
+2.  **Data Loading:**
+    *   **Crucial Simplification:** Directly loading and preprocessing WMT 2014 data with BPE in a single, runnable Python script is highly complex and requires external tools (`subword-nmt`), large data downloads, and significant setup.
+    *   **Placeholder:** The provided script includes a `data_generator` function that yields *random tensors*. This allows the script to run and demonstrate the training logic.
+    *   **User Action Required:** To train on actual WMT 2014 data, you *must* replace `data_generator` with a proper data loader that:
+        *   Downloads WMT 2014 En-De/En-Fr datasets.
+        *   Applies Byte Pair Encoding (BPE) using a tool like `subword-nmt`.
+        *   Builds a vocabulary from the BPE-encoded data.
+        *   Pads sequences to the same length within batches.
+        *   Yields batches of source, target, and target output (shifted right) tensors.
+    *   **Recommended Data Loading Libraries:** For real WMT data, consider using libraries like `torchtext` (though it can be tricky with BPE) or implementing a custom `torch.utils.data.Dataset` and `torch.utils.data.DataLoader` after preprocessing the data with `subword-nmt`.
+3.  **BLEU Score Calculation:** The script includes `sacrebleu` for evaluation. When using real data, ensure your generated translations are properly detokenized before calculating BLEU. The `evaluate_bleu` function is a placeholder that would need real data and model inference.
+4.  **Multi-GPU Training:** The original paper used 8 P100 GPUs. This script defaults to single GPU. For multi-GPU, you would typically wrap the model with `nn.DataParallel(model)` (simpler) or `nn.parallel.DistributedDataParallel(model)` (more performant for large scale) and configure your data loaders for distributed training.
+5.  **Training Duration:** The paper mentions 3.5 days on 8 P100 GPUs for the big model. The provided script will run for a predefined number of steps (epochs for dummy data) and will not reach the paper's performance without the correct data and hardware.
+6.  **`tqdm`:** Added for progress bars during training. Install with `pip install tqdm`.
+7.  **`sacrebleu`:** Added for BLEU calculation. Install with `pip install sacrebleu`.
+
+---
+
+### **PyTorch Training Script for Transformer**
 
 ```python
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
 import math
+import copy
 import time
 import os
-import random
-import numpy as np
+from tqdm import tqdm
+import sacrebleu # For BLEU score calculation
 
-# For data loading (simplified for demonstration)
-from torchtext.data import Field, BucketIterator, TabularDataset
-from torchtext.datasets import Multi30k # A smaller dataset for easier demonstration
-from torchtext.data.utils import get_tokenizer
+# --- 1. Transformer Model Architecture (from "Attention Is All You Need" paper) ---
 
-# For BLEU score calculation
-from sacrebleu import corpus_bleu
+# Helper function for cloning modules
+def clones(module, N):
+    return nn.ModuleList([copy.deepcopy(module) for _ in range(N)])
 
-# For logging
-from torch.utils.tensorboard import SummaryWriter
-
-# --- 0. Configuration and Hyperparameters ---
-
-# Define model configuration (Base vs. Big Transformer)
-class ModelConfig:
-    def __init__(self, model_type="base"):
-        if model_type == "base":
-            self.d_model = 512       # Embedding dimension
-            self.n_heads = 8         # Number of attention heads
-            self.n_layers = 6        # Number of encoder/decoder layers
-            self.d_ff = 2048         # Feed-forward hidden dimension
-            self.dropout = 0.1       # Dropout rate
-            self.warmup_steps = 4000 # Learning rate warmup steps
-            self.label_smoothing = 0.1 # Label smoothing epsilon
-            self.batch_size_tokens = 25000 # Approx. tokens per batch (paper uses this for big model, base often smaller but we'll try to match token count)
-            self.adam_betas = (0.9, 0.98) # Adam optimizer betas
-            self.adam_eps = 1e-9     # Adam optimizer epsilon
-            self.max_seq_len = 256   # Max sequence length (adjust based on dataset)
-        elif model_type == "big":
-            self.d_model = 1024
-            self.n_heads = 16
-            self.n_layers = 6
-            self.d_ff = 4096
-            self.dropout = 0.1
-            self.warmup_steps = 4000
-            self.label_smoothing = 0.1
-            self.batch_size_tokens = 25000 # Paper specifies this for big model
-            self.adam_betas = (0.9, 0.98)
-            self.adam_eps = 1e-9
-            self.max_seq_len = 256
-        else:
-            raise ValueError("model_type must be 'base' or 'big'")
-
-# Select model configuration
-MODEL_TYPE = "base" # Change to "big" for the larger model
-config = ModelConfig(MODEL_TYPE)
-
-# General Training Configuration
-NUM_EPOCHS = 10         # Number of epochs for demonstration. Real training is much longer.
-CLIP = 1.0              # Gradient clipping
-SAVE_DIR = "checkpoints"
-LOG_DIR = "runs"
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# Set random seeds for reproducibility
-SEED = 42
-random.seed(SEED)
-np.random.seed(SEED)
-torch.manual_seed(SEED)
-torch.cuda.manual_seed_all(SEED)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
-
-# Create directories
-os.makedirs(SAVE_DIR, exist_ok=True)
-os.makedirs(LOG_DIR, exist_ok=True)
-
-# Initialize TensorBoard writer
-writer = SummaryWriter(log_dir=os.path.join(LOG_DIR, f'transformer_{MODEL_TYPE}_{time.strftime("%Y%m%d-%H%M%S")}'))
-
-
-# --- 1. Transformer Model Components ---
-
-class PositionalEncoding(nn.Module):
-    def __init__(self, d_model, max_seq_len=5000, dropout=0.1):
-        super().__init__()
+# --- Core Attention Mechanism ---
+class MultiHeadAttention(nn.Module):
+    def __init__(self, h, d_model, dropout=0.1):
+        super(MultiHeadAttention, self).__init__()
+        assert d_model % h == 0
+        self.d_k = d_model // h  # Dimension of K, Q, V for each head
+        self.h = h               # Number of attention heads
+        self.linears = clones(nn.Linear(d_model, d_model), 4) # W_Q, W_K, W_V, W_O
+        self.attn = None
         self.dropout = nn.Dropout(p=dropout)
 
-        pe = torch.zeros(max_seq_len, d_model)
-        position = torch.arange(0, max_seq_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0) # (1, max_seq_len, d_model)
-        self.register_buffer('pe', pe)
+    def forward(self, query, key, value, mask=None):
+        if mask is not None:
+            mask = mask.unsqueeze(1) # Same mask applied to all h heads
+        nbatches = query.size(0)
+
+        # 1) Do all the linear projections in batch from d_model => h x d_k
+        query, key, value = \
+            [l(x).view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
+             for l, x in zip(self.linears, (query, key, value))]
+
+        # 2) Apply attention on all the projected vectors in batch.
+        x, self.attn = self.attention(query, key, value, mask=mask, dropout=self.dropout)
+
+        # 3) Concat and apply final linear.
+        x = x.transpose(1, 2).contiguous().view(nbatches, -1, self.h * self.d_k)
+        return self.linears[-1](x)
+
+    @staticmethod
+    def attention(query, key, value, mask=None, dropout=None):
+        d_k = query.size(-1)
+        scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
+        if mask is not None:
+            scores = scores.masked_fill(mask == 0, -1e9) # Fill with a very small number for masked positions
+        p_attn = scores.softmax(dim=-1)
+        if dropout is not None:
+            p_attn = dropout(p_attn)
+        return torch.matmul(p_attn, value), p_attn
+
+# --- Position-wise Feed-Forward Networks ---
+class PositionwiseFeedForward(nn.Module):
+    def __init__(self, d_model, d_ff, dropout=0.1):
+        super(PositionwiseFeedForward, self).__init__()
+        self.w_1 = nn.Linear(d_model, d_ff)
+        self.w_2 = nn.Linear(d_ff, d_model)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
-        # x: (batch_size, seq_len, d_model)
-        x = x + self.pe[:, :x.size(1)]
-        return self.dropout(x)
+        return self.w_2(self.dropout(self.w_1(x).relu()))
 
-class MultiHeadAttention(nn.Module):
-    def __init__(self, d_model, n_heads, dropout=0.1):
-        super().__init__()
-        assert d_model % n_heads == 0
-        self.d_k = d_model // n_heads
-        self.n_heads = n_heads
+# --- Layer Normalization ---
+class LayerNorm(nn.Module):
+    def __init__(self, features, eps=1e-6):
+        super(LayerNorm, self).__init__()
+        self.a_2 = nn.Parameter(torch.ones(features))
+        self.b_2 = nn.Parameter(torch.zeros(features))
+        self.eps = eps
+
+    def forward(self, x):
+        mean = x.mean(-1, keepdim=True)
+        std = x.std(-1, keepdim=True)
+        return self.a_2 * (x - mean) / (std + self.eps) + self.b_2
+
+# --- Sublayer Connection (Residual + LayerNorm + Dropout) ---
+class SublayerConnection(nn.Module):
+    def __init__(self, size, dropout):
+        super(SublayerConnection, self).__init__()
+        self.norm = LayerNorm(size)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x, sublayer):
+        # Apply layer normalization, then sublayer, then dropout, then add residual
+        return x + self.dropout(sublayer(self.norm(x)))
+
+# --- Encoder Layer ---
+class EncoderLayer(nn.Module):
+    def __init__(self, size, self_attn, feed_forward, dropout):
+        super(EncoderLayer, self).__init__()
+        self.self_attn = self_attn
+        self.feed_forward = feed_forward
+        self.sublayer = clones(SublayerConnection(size, dropout), 2) # Two sublayers
+        self.size = size
+
+    def forward(self, x, mask):
+        x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, mask))
+        return self.sublayer[1](x, self.feed_forward)
+
+# --- Encoder ---
+class Encoder(nn.Module):
+    def __init__(self, layer, N):
+        super(Encoder, self).__init__()
+        self.layers = clones(layer, N)
+        self.norm = LayerNorm(layer.size)
+
+    def forward(self, x, mask):
+        for layer in self.layers:
+            x = layer(x, mask)
+        return self.norm(x)
+
+# --- Decoder Layer ---
+class DecoderLayer(nn.Module):
+    def __init__(self, size, self_attn, src_attn, feed_forward, dropout):
+        super(DecoderLayer, self).__init__()
+        self.size = size
+        self.self_attn = self_attn    # Masked self-attention
+        self.src_attn = src_attn      # Encoder-decoder attention
+        self.feed_forward = feed_forward
+        self.sublayer = clones(SublayerConnection(size, dropout), 3) # Three sublayers
+
+    def forward(self, x, memory, src_mask, tgt_mask):
+        m = memory
+        x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, tgt_mask))
+        x = self.sublayer[1](x, lambda x: self.src_attn(x, m, m, src_mask))
+        return self.sublayer[2](x, self.feed_forward)
+
+# --- Decoder ---
+class Decoder(nn.Module):
+    def __init__(self, layer, N):
+        super(Decoder, self).__init__()
+        self.layers = clones(layer, N)
+        self.norm = LayerNorm(layer.size)
+
+    def forward(self, x, memory, src_mask, tgt_mask):
+        for layer in self.layers:
+            x = layer(x, memory, src_mask, tgt_mask)
+        return self.norm(x)
+
+# --- Embeddings and Positional Encoding ---
+class Embeddings(nn.Module):
+    def __init__(self, d_model, vocab):
+        super(Embeddings, self).__init__()
+        self.lut = nn.Embedding(vocab, d_model)
         self.d_model = d_model
 
-        self.w_q = nn.Linear(d_model, d_model)
-        self.w_k = nn.Linear(d_model, d_model)
-        self.w_v = nn.Linear(d_model, d_model)
-        self.fc_out = nn.Linear(d_model, d_model)
+    def forward(self, x):
+        return self.lut(x) * math.sqrt(self.d_model)
 
-        self.dropout = nn.Dropout(dropout)
-        self.scale = torch.sqrt(torch.FloatTensor([self.d_k])).to(DEVICE)
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, dropout, max_len=5000):
+        super(PositionalEncoding, self).__init__()
+        self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, query, key, value, mask=None):
-        # query, key, value: (batch_size, seq_len, d_model)
-        batch_size = query.shape[0]
-
-        Q = self.w_q(query)
-        K = self.w_k(key)
-        V = self.w_v(value)
-
-        Q = Q.view(batch_size, -1, self.n_heads, self.d_k).permute(0, 2, 1, 3) # (batch_size, n_heads, seq_len, d_k)
-        K = K.view(batch_size, -1, self.n_heads, self.d_k).permute(0, 2, 1, 3)
-        V = V.view(batch_size, -1, self.n_heads, self.d_k).permute(0, 2, 1, 3)
-
-        energy = torch.matmul(Q, K.permute(0, 1, 3, 2)) / self.scale # (batch_size, n_heads, seq_len, seq_len)
-
-        if mask is not None:
-            energy = energy.masked_fill(mask == 0, -1e10) # Apply mask before softmax
-
-        attention = torch.softmax(energy, dim=-1) # (batch_size, n_heads, seq_len, seq_len)
-        attention = self.dropout(attention)
-
-        x = torch.matmul(attention, V) # (batch_size, n_heads, seq_len, d_k)
-        x = x.permute(0, 2, 1, 3).contiguous() # (batch_size, seq_len, n_heads, d_k)
-        x = x.view(batch_size, -1, self.d_model) # (batch_size, seq_len, d_model)
-
-        x = self.fc_out(x) # (batch_size, seq_len, d_model)
-        return x, attention
-
-class PositionwiseFeedforward(nn.Module):
-    def __init__(self, d_model, d_ff, dropout=0.1):
-        super().__init__()
-        self.fc_1 = nn.Linear(d_model, d_ff)
-        self.fc_2 = nn.Linear(d_ff, d_model)
-        self.dropout = nn.Dropout(dropout)
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2) *
+                             -(math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0)
+        self.register_buffer('pe', pe) # Not a learnable parameter
 
     def forward(self, x):
-        # x: (batch_size, seq_len, d_model)
-        x = self.dropout(F.relu(self.fc_1(x)))
-        x = self.fc_2(x)
-        return x
+        x = x + self.pe[:, :x.size(1)].requires_grad_(False)
+        return self.dropout(x)
 
-class EncoderLayer(nn.Module):
-    def __init__(self, d_model, n_heads, d_ff, dropout):
-        super().__init__()
-        self.self_attn = MultiHeadAttention(d_model, n_heads, dropout)
-        self.norm1 = nn.LayerNorm(d_model)
-        self.pos_ff = PositionwiseFeedforward(d_model, d_ff, dropout)
-        self.norm2 = nn.LayerNorm(d_model)
-        self.dropout = nn.Dropout(dropout)
-
-    def forward(self, src, src_mask):
-        # src: (batch_size, src_seq_len, d_model)
-        # src_mask: (batch_size, 1, 1, src_seq_len) or (batch_size, 1, src_seq_len, src_seq_len)
-
-        # Self-attention
-        _src, _ = self.self_attn(src, src, src, src_mask)
-        src = self.norm1(src + self.dropout(_src))
-
-        # Position-wise Feedforward
-        _src = self.pos_ff(src)
-        src = self.norm2(src + self.dropout(_src))
-        return src
-
-class Encoder(nn.Module):
-    def __init__(self, input_dim, d_model, n_heads, d_ff, n_layers, dropout, max_seq_len):
-        super().__init__()
-        self.tok_embedding = nn.Embedding(input_dim, d_model)
-        self.pos_embedding = PositionalEncoding(d_model, max_seq_len, dropout)
-        self.layers = nn.ModuleList([EncoderLayer(d_model, n_heads, d_ff, dropout) for _ in range(n_layers)])
-        self.dropout = nn.Dropout(dropout)
-        self.scale = torch.sqrt(torch.FloatTensor([d_model])).to(DEVICE)
-
-    def forward(self, src, src_mask):
-        # src: (batch_size, src_seq_len)
-        # src_mask: (batch_size, 1, 1, src_seq_len)
-
-        src_seq_len = src.shape[1]
-        
-        # Token embedding + Positional Encoding
-        src = self.tok_embedding(src) * self.scale
-        src = self.pos_embedding(src)
-
-        for layer in self.layers:
-            src = layer(src, src_mask)
-        return src
-
-class DecoderLayer(nn.Module):
-    def __init__(self, d_model, n_heads, d_ff, dropout):
-        super().__init__()
-        self.self_attn = MultiHeadAttention(d_model, n_heads, dropout)
-        self.norm1 = nn.LayerNorm(d_model)
-        self.enc_attn = MultiHeadAttention(d_model, n_heads, dropout)
-        self.norm2 = nn.LayerNorm(d_model)
-        self.pos_ff = PositionwiseFeedforward(d_model, d_ff, dropout)
-        self.norm3 = nn.LayerNorm(d_model)
-        self.dropout = nn.Dropout(dropout)
-
-    def forward(self, trg, enc_src, trg_mask, src_mask):
-        # trg: (batch_size, trg_seq_len, d_model)
-        # enc_src: (batch_size, src_seq_len, d_model)
-        # trg_mask: (batch_size, 1, trg_seq_len, trg_seq_len)
-        # src_mask: (batch_size, 1, 1, src_seq_len)
-
-        # Self-attention (masked)
-        _trg, _ = self.self_attn(trg, trg, trg, trg_mask)
-        trg = self.norm1(trg + self.dropout(_trg))
-
-        # Encoder-Decoder Attention
-        _trg, attention = self.enc_attn(trg, enc_src, enc_src, src_mask)
-        trg = self.norm2(trg + self.dropout(_trg))
-
-        # Position-wise Feedforward
-        _trg = self.pos_ff(trg)
-        trg = self.norm3(trg + self.dropout(_trg))
-        return trg, attention
-
-class Decoder(nn.Module):
-    def __init__(self, output_dim, d_model, n_heads, d_ff, n_layers, dropout, max_seq_len):
-        super().__init__()
-        self.tok_embedding = nn.Embedding(output_dim, d_model)
-        self.pos_embedding = PositionalEncoding(d_model, max_seq_len, dropout)
-        self.layers = nn.ModuleList([DecoderLayer(d_model, n_heads, d_ff, dropout) for _ in range(n_layers)])
-        self.fc_out = nn.Linear(d_model, output_dim)
-        self.dropout = nn.Dropout(dropout)
-        self.scale = torch.sqrt(torch.FloatTensor([d_model])).to(DEVICE)
-
-    def forward(self, trg, enc_src, trg_mask, src_mask):
-        # trg: (batch_size, trg_seq_len)
-        # enc_src: (batch_size, src_seq_len, d_model)
-        # trg_mask: (batch_size, 1, trg_seq_len, trg_seq_len)
-        # src_mask: (batch_size, 1, 1, src_seq_len)
-
-        trg_seq_len = trg.shape[1]
-        
-        # Token embedding + Positional Encoding
-        trg = self.tok_embedding(trg) * self.scale
-        trg = self.pos_embedding(trg)
-
-        for layer in self.layers:
-            trg, attention = layer(trg, enc_src, trg_mask, src_mask)
-        
-        output = self.fc_out(trg) # (batch_size, trg_seq_len, output_dim)
-        return output, attention
-
+# --- Full Transformer Model ---
 class Transformer(nn.Module):
-    def __init__(self, encoder, decoder, src_pad_idx, trg_pad_idx):
-        super().__init__()
+    def __init__(self, encoder, decoder, src_embed, tgt_embed, generator):
+        super(Transformer, self).__init__()
         self.encoder = encoder
         self.decoder = decoder
-        self.src_pad_idx = src_pad_idx
-        self.trg_pad_idx = trg_pad_idx
+        self.src_embed = src_embed
+        self.tgt_embed = tgt_embed
+        self.generator = generator
 
-    def make_src_mask(self, src):
-        # src: (batch_size, src_seq_len)
-        src_mask = (src != self.src_pad_idx).unsqueeze(1).unsqueeze(2)
-        # (batch_size, 1, 1, src_seq_len)
-        return src_mask
+    def forward(self, src, tgt, src_mask, tgt_mask):
+        return self.decode(self.encode(src, src_mask), src_mask, tgt, tgt_mask)
 
-    def make_trg_mask(self, trg):
-        # trg: (batch_size, trg_seq_len)
-        trg_pad_mask = (trg != self.trg_pad_idx).unsqueeze(1).unsqueeze(2)
-        # (batch_size, 1, 1, trg_seq_len)
+    def encode(self, src, src_mask):
+        return self.encoder(self.src_embed(src), src_mask)
 
-        trg_len = trg.shape[1]
-        trg_sub_mask = torch.tril(torch.ones((trg_len, trg_len), device=DEVICE)).bool()
-        # (trg_seq_len, trg_seq_len)
+    def decode(self, memory, src_mask, tgt, tgt_mask):
+        return self.decoder(self.tgt_embed(tgt), memory, src_mask, tgt_mask)
+
+# --- Output Generator (Linear + Softmax) ---
+class Generator(nn.Module):
+    def __init__(self, d_model, vocab):
+        super(Generator, self).__init__()
+        self.proj = nn.Linear(d_model, vocab)
+
+    def forward(self, x):
+        return self.proj(x) # Log softmax is usually applied in the loss function
+
+# --- 2. Model Initialization Function ---
+def make_model(src_vocab, tgt_vocab, N=6, d_model=512, d_ff=2048, h=8, dropout=0.1):
+    c = copy.deepcopy
+    attn = MultiHeadAttention(h, d_model, dropout)
+    ff = PositionwiseFeedForward(d_model, d_ff, dropout)
+    position = PositionalEncoding(d_model, dropout)
+    model = Transformer(
+        Encoder(EncoderLayer(d_model, c(attn), c(ff), dropout), N),
+        Decoder(DecoderLayer(d_model, c(attn), c(attn), c(ff), dropout), N),
+        nn.Sequential(Embeddings(d_model, src_vocab), c(position)),
+        nn.Sequential(Embeddings(d_model, tgt_vocab), c(position)),
+        Generator(d_model, tgt_vocab))
+
+    # This was important in the paper for stability. Initialize parameters with Glorot/Xavier.
+    for p in model.parameters():
+        if p.dim() > 1:
+            nn.init.xavier_uniform_(p)
+    return model
+
+# --- 3. Custom Learning Rate Schedule (Noam Optimizer) ---
+class NoamOpt:
+    def __init__(self, model_size, factor, warmup, optimizer):
+        self.optimizer = optimizer
+        self._step = 0
+        self.warmup = warmup
+        self.factor = factor
+        self.model_size = model_size
+        self._rate = 0
+
+    def step(self):
+        self._step += 1
+        rate = self.rate()
+        for p in self.optimizer.param_groups:
+            p['lr'] = rate
+        self._rate = rate
+        self.optimizer.step()
+
+    def rate(self, step=None):
+        if step is None:
+            step = self._step
+        return self.factor * \
+               (self.model_size ** (-0.5) *
+                min(step ** (-0.5), step * self.warmup ** (-1.5)))
+
+# --- 4. Label Smoothing Loss ---
+class LabelSmoothingLoss(nn.Module):
+    def __init__(self, size, padding_idx, smoothing=0.0):
+        super(LabelSmoothingLoss, self).__init__()
+        self.criterion = nn.KLDivLoss(reduction="sum")
+        self.padding_idx = padding_idx
+        self.confidence = 1.0 - smoothing
+        self.smoothing = smoothing
+        self.size = size
+        self.true_dist = None
+
+    def forward(self, x, target):
+        assert x.size(1) == self.size
+        true_dist = x.data.clone()
+        true_dist.fill_(self.smoothing / (self.size - 2))
+        true_dist.scatter_(1, target.data.unsqueeze(1), self.confidence)
+        true_dist[:, self.padding_idx] = 0
+        mask = torch.nonzero(target.data == self.padding_idx)
+        if mask.dim() > 0:
+            true_dist.index_fill_(0, mask.squeeze(), 0.0)
+        self.true_dist = true_dist
+        return self.criterion(x, true_dist.requires_grad_(False))
+
+# --- 5. Data Batching and Masking ---
+class Batch:
+    def __init__(self, src, tgt=None, pad_idx=0):
+        self.src = src
+        self.src_mask = (src != pad_idx).unsqueeze(-2)
+        if tgt is not None:
+            self.tgt = tgt[:, :-1] # Target input (shifted right)
+            self.tgt_y = tgt[:, 1:] # Target output (what we want to predict)
+            self.tgt_mask = \
+                self.make_std_mask(self.tgt, pad_idx)
+            self.ntokens = (self.tgt_y != pad_idx).sum().item()
+
+    @staticmethod
+    def make_std_mask(tgt, pad_idx):
+        "Create a mask to hide padding and future words."
+        tgt_mask = (tgt != pad_idx).unsqueeze(-2)
+        tgt_mask = tgt_mask & Variable(
+            subsequent_mask(tgt.size(-1)).type_as(tgt_mask.data))
+        return tgt_mask
+
+def subsequent_mask(size):
+    "Mask out subsequent positions."
+    attn_shape = (1, size, size)
+    subsequent_mask = torch.triu(torch.ones(attn_shape), diagonal=1).type(
+        torch.uint8
+    ) == 0
+    return subsequent_mask
+
+# --- 6. Data Loading (Conceptual / Placeholder) ---
+
+# This is a placeholder for actual WMT data loading.
+# In a real scenario, you would:
+# 1. Download WMT 2014 En-De or En-Fr data.
+# 2. Train a BPE model and apply it to the data using `subword-nmt`.
+# 3. Build a vocabulary mapping tokens to indices.
+# 4. Create a PyTorch Dataset and DataLoader.
+# For simplicity, this function generates random data.
+def data_generator(src_vocab_size, tgt_vocab_size, batch_size, num_batches, max_len=50):
+    for i in range(num_batches):
+        src = torch.randint(1, src_vocab_size, (batch_size, max_len))
+        tgt = torch.randint(1, tgt_vocab_size, (batch_size, max_len))
+        # Ensure start and end tokens, and some padding
+        src[:, 0] = 1 # BOS
+        src[:, -1] = 2 # EOS
+        tgt[:, 0] = 1 # BOS
+        tgt[:, -1] = 2 # EOS
+        # Randomly mask some tokens as padding (index 0)
+        padding_mask_src = torch.rand(batch_size, max_len) < 0.1
+        padding_mask_tgt = torch.rand(batch_size, max_len) < 0.1
+        src[padding_mask_src] = 0
+        tgt[padding_mask_tgt] = 0
+
+        # Create a Batch object
+        yield Batch(src, tgt, pad_idx=0)
+
+
+# --- 7. Training and Evaluation Functions ---
+
+def run_epoch(data_iter, model, loss_compute, optimizer, device, is_train=True):
+    start = time.time()
+    total_tokens = 0
+    total_loss = 0
+    tokens = 0
+
+    mode_str = "Train" if is_train else "Valid"
+    pbar = tqdm(data_iter, desc=f"{mode_str} Epoch", leave=False)
+
+    for i, batch in enumerate(pbar):
+        src = batch.src.to(device)
+        tgt = batch.tgt.to(device)
+        src_mask = batch.src_mask.to(device)
+        tgt_mask = batch.tgt_mask.to(device)
+        tgt_y = batch.tgt_y.to(device)
+        ntokens = batch.ntokens
+
+        out = model.forward(src, tgt, src_mask, tgt_mask)
+        # Apply log_softmax for KLDivLoss
+        prob = model.generator(out).log_softmax(dim=-1)
+        # Reshape for loss calculation: (batch_size * sequence_length, vocab_size)
+        # and target: (batch_size * sequence_length)
+        loss = loss_compute(prob.contiguous().view(-1, prob.size(-1)),
+                            tgt_y.contiguous().view(-1))
         
-        trg_mask = trg_pad_mask & trg_sub_mask
-        # (batch_size, 1, trg_seq_len, trg_seq_len)
-        return trg_mask
+        if is_train:
+            loss.backward()
+            optimizer.step()
+            optimizer.optimizer.zero_grad() # NoamOpt wraps the base optimizer
 
-    def forward(self, src, trg):
-        src_mask = self.make_src_mask(src)
-        trg_mask = self.make_trg_mask(trg)
-
-        enc_src = self.encoder(src, src_mask)
-        output, attention = self.decoder(trg, enc_src, trg_mask, src_mask)
-        return output, attention
-
-# --- 2. Data Loading & Preprocessing (Simplified for Demo) ---
-
-# Define tokenizers
-# For true WMT 2014 reproduction, you MUST use BPE (Byte-Pair Encoding).
-# Example for BPE (requires subword-nmt or sentencepiece and pre-trained BPE model):
-# from subword_nmt.apply_bpe import BPE
-# bpe_codes = open('path/to/bpe_codes.txt')
-# bpe = BPE(bpe_codes)
-# SRC_tokenizer = lambda s: bpe.process_line(s).split()
-# TRG_tokenizer = lambda s: bpe.process_line(s).split()
-# For this script, we'll use Spacy tokenizer for simplicity.
-
-spacy_en = get_tokenizer('spacy', language='en_core_web_sm')
-spacy_de = get_tokenizer('spacy', language='de_core_news_sm')
-
-# Fields for source and target languages
-# We use a custom batching strategy (token-based) so batch_first=True is convenient
-SRC = Field(tokenize=spacy_de, init_token='<sos>', eos_token='<eos>', lower=True, batch_first=True)
-TRG = Field(tokenize=spacy_en, init_token='<sos>', eos_token='<eos>', lower=True, batch_first=True)
-
-# Load Multi30k dataset (smaller, for demo purposes)
-# For WMT 2014: you would use `torchtext.datasets.WMT14`
-# WMT14.splits(exts=('.de', '.en'), fields=[SRC, TRG])
-print("Loading Multi30k dataset...")
-train_data, valid_data, test_data = Multi30k.splits(exts=('.de', '.en'), fields=(SRC, TRG))
-print(f"Number of training examples: {len(train_data.examples)}")
-print(f"Number of validation examples: {len(valid_data.examples)}")
-print(f"Number of testing examples: {len(test_data.examples)}")
-
-# Build vocabulary
-print("Building vocabulary...")
-SRC.build_vocab(train_data, min_freq=2)
-TRG.build_vocab(train_data, min_freq=2)
-print(f"Unique tokens in source vocabulary: {len(SRC.vocab)}")
-print(f"Unique tokens in target vocabulary: {len(TRG.vocab)}")
-
-SRC_PAD_IDX = SRC.vocab.stoi[SRC.pad_token]
-TRG_PAD_IDX = TRG.vocab.stoi[TRG.pad_token]
-TRG_SOS_IDX = TRG.vocab.stoi[TRG.init_token]
-TRG_EOS_IDX = TRG.vocab.stoi[TRG.eos_token]
-
-# Custom batching for token-based batch size
-def batch_size_fn(new_example, current_batch, config):
-    """
-    Function to determine if a new example fits into the current token-based batch.
-    This is a simplified version; real token-based batching is more complex.
-    """
-    if current_batch is None:
-        return 1  # Start a new batch
-    
-    # Approximate token count for the new example
-    new_src_len = len(new_example.src)
-    new_trg_len = len(new_example.trg)
-    
-    # Current batch's total token count (approximate)
-    current_batch_src_tokens = sum(len(ex.src) for ex in current_batch)
-    current_batch_trg_tokens = sum(len(ex.trg) for ex in current_batch)
-    
-    # Check if adding the new example exceeds the token limit
-    # We aim for ~ config.batch_size_tokens total tokens across src and trg
-    if (current_batch_src_tokens + new_src_len <= config.batch_size_tokens and
-        current_batch_trg_tokens + new_trg_len <= config.batch_size_tokens):
-        return 1 # Add to current batch
-    else:
-        return config.batch_size_tokens # Create a new batch, using a dummy value indicating no more space
-
-# Create iterators
-print("Creating data iterators...")
-# BucketIterator automatically groups similar length sentences to minimize padding
-train_iterator, valid_iterator, test_iterator = BucketIterator.splits(
-    (train_data, valid_data, test_data),
-    batch_size=1, # Dummy batch size, actual batching by `batch_size_fn`
-    sort_key=lambda x: len(x.src), # Sort by source length for efficient batching
-    device=DEVICE,
-    sort_within_batch=True,
-    repeat=False
-)
-
-# A generator for token-based batches
-def generate_token_batches(iterator, batch_size_tokens, pad_idx, device):
-    batch = []
-    current_src_tokens = 0
-    current_trg_tokens = 0
-
-    for example in iterator.data():
-        src_len = len(example.src)
-        trg_len = len(example.trg)
+        total_loss += loss.item()
+        total_tokens += ntokens
+        tokens += ntokens
         
-        # Check if adding this example exceeds token limit or max sequence length
-        if (current_src_tokens + src_len > batch_size_tokens or
-            current_trg_tokens + trg_len > batch_size_tokens or
-            src_len > config.max_seq_len or trg_len > config.max_seq_len):
+        pbar.set_postfix({'loss': loss.item() / ntokens, 'tokens/sec': tokens / (time.time() - start)})
+
+    elapsed = time.time() - start
+    return total_loss / total_tokens, elapsed
+
+def greedy_decode(model, src, src_mask, max_len, start_symbol, end_symbol, device):
+    memory = model.encode(src, src_mask)
+    ys = torch.ones(1, 1).fill_(start_symbol).type_as(src.data).to(device)
+    for i in range(max_len - 1):
+        out = model.decode(memory, src_mask,
+                           ys,
+                           Variable(subsequent_mask(ys.size(1))
+                                    .type_as(src.data))).to(device)
+        prob = model.generator(out[:, -1])
+        _, next_word = torch.max(prob, dim=1)
+        next_word = next_word.item()
+        ys = torch.cat([ys,
+                        torch.ones(1, 1).type_as(src.data).fill_(next_word).to(device)], dim=1)
+        if next_word == end_symbol:
+            break
+    return ys
+
+def evaluate_bleu(model, data_iter, src_vocab, tgt_vocab, device, max_len=50, start_symbol=1, end_symbol=2):
+    model.eval()
+    hypotheses = []
+    references = []
+    
+    with torch.no_grad():
+        for i, batch in enumerate(tqdm(data_iter, desc="Evaluating BLEU", leave=False)):
+            src = batch.src.to(device)
+            src_mask = batch.src_mask.to(device)
             
-            if batch: # If there's a batch to yield
-                # Pad and stack the sentences
-                max_src_len = max(len(ex.src) for ex in batch)
-                max_trg_len = max(len(ex.trg) for ex in batch)
+            # Decode one sentence at a time for simplicity in greedy_decode
+            for j in range(src.size(0)):
+                single_src = src[j:j+1]
+                single_src_mask = src_mask[j:j+1]
                 
-                src_tensor = torch.full((len(batch), max_src_len), pad_idx, dtype=torch.long, device=device)
-                trg_tensor = torch.full((len(batch), max_trg_len), pad_idx, dtype=torch.long, device=device)
+                out_tokens = greedy_decode(model, single_src, single_src_mask, max_len, start_symbol, end_symbol, device)
                 
-                for i, ex in enumerate(batch):
-                    src_tensor[i, :len(ex.src)] = torch.tensor(ex.src, dtype=torch.long, device=device)
-                    trg_tensor[i, :len(ex.trg)] = torch.tensor(ex.trg, dtype=torch.long, device=device)
+                # Convert token IDs to words (dummy conversion for now)
+                # In a real scenario, you'd use your actual vocabulary to map IDs to BPE tokens
+                # and then detokenize the BPE tokens.
+                predicted_sentence = " ".join([str(x.item()) for x in out_tokens[0] if x.item() not in [0, start_symbol, end_symbol]])
+                target_sentence = " ".join([str(x.item()) for x in batch.tgt_y[j] if x.item() not in [0, start_symbol, end_symbol]])
                 
-                yield src_tensor, trg_tensor
+                hypotheses.append(predicted_sentence)
+                references.append([target_sentence]) # sacrebleu expects a list of references
 
-            # Reset for a new batch
-            batch = [example]
-            current_src_tokens = src_len
-            current_trg_tokens = trg_len
-        else:
-            batch.append(example)
-            current_src_tokens += src_len
-            current_trg_tokens += trg_len
-    
-    if batch: # Yield any remaining batch
-        max_src_len = max(len(ex.src) for ex in batch)
-        max_trg_len = max(len(ex.trg) for ex in batch)
-        
-        src_tensor = torch.full((len(batch), max_src_len), pad_idx, dtype=torch.long, device=device)
-        trg_tensor = torch.full((len(batch), max_trg_len), pad_idx, dtype=torch.long, device=device)
-        
-        for i, ex in enumerate(batch):
-            src_tensor[i, :len(ex.src)] = torch.tensor(ex.src, dtype=torch.long, device=device)
-            trg_tensor[i, :len(ex.trg)] = torch.tensor(ex.trg, dtype=torch.long, device=device)
-        
-        yield src_tensor, trg_tensor
+    if not hypotheses:
+        return 0.0 # No predictions made
 
+    # Calculate BLEU score
+    bleu = sacrebleu.corpus_bleu(hypotheses, references)
+    return bleu.score
 
-# ---
+# --- Main Training Script ---
+def main():
+    # --- Configuration ---
+    # Choose between 'base' and 'big' model configurations
+    model_type = "base" # Or "big"
+    task = "en-de"      # Or "en-fr"
+
+    if model_type == "base":
+        N_layers = 6
+        d_model = 512
+        d_ff = 2048
+        h_heads = 8
+        dropout = 0.1
+        batch_size = 25000 # tokens per batch (approximate for dummy data)
+        warmup_steps = 4000
+    elif model_type == "big":
+        N_layers = 6
+        d_model = 1024
+        d_ff = 4096
+        h_heads = 16
+        dropout = 0.3
+        batch_size = 25000 # tokens per batch (approximate for dummy data)
+        warmup_steps = 4000
+    else:
+        raise ValueError("model_type must be 'base' or 'big'")
+
+    # Common parameters
+    src_vocab_size = 10000 # Placeholder: actual vocab size will be larger (e.g.,
