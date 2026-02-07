@@ -167,6 +167,43 @@ Please write clean, well-documented code to solve this problem. Include:
                     framework="pytorch"  # Default to PyTorch
                 )
                 
+                # Save Understanding artifact (02)
+                console.print("[cyan]💾 Saving Understanding artifact...[/cyan]")
+                artifact_manager.save_understanding(
+                    title=paper_analysis.content.title,
+                    problem_statement=paper_analysis.understanding.contributions[:200] if paper_analysis.understanding.contributions else "Not available",
+                    solution_approach=paper_analysis.understanding.methodology[:200] if paper_analysis.understanding.methodology else "Not available",
+                    key_insights=[
+                        "Core contribution from paper analysis",
+                        "Methodology approach identified",
+                        "Implementation focuses on reproducibility"
+                    ],
+                    design_decisions=[{
+                        'name': 'Framework Selection',
+                        'rationale': 'PyTorch for research flexibility',
+                        'tradeoff': 'More boilerplate code',
+                        'impact': 'High'
+                    }],
+                    architecture_notes=f"Framework: PyTorch, Files: {len(implementation.project.files)}"
+                )
+                
+                # Save Architecture Design artifact (03)
+                console.print("[cyan]💾 Saving Architecture Design artifact...[/cyan]")
+                artifact_manager.save_architecture_design(
+                    framework="pytorch",
+                    components=[],
+                    design_choices=[{
+                        'aspect': 'Code Organization',
+                        'selected': 'Modular package structure',
+                        'rationale': 'Improves maintainability',
+                        'alternatives': 'Single-file (rejected)'
+                    }],
+                    complexity_matrix=[
+                        {'name': 'Model', 'lines': 'TBD', 'complexity': 'High', 'priority': 'P0'},
+                        {'name': 'Training', 'lines': 'TBD', 'complexity': 'Medium', 'priority': 'P0'},
+                    ]
+                )
+                
                 # Format result
                 result = f"""# Paper Reproduction Complete
 
