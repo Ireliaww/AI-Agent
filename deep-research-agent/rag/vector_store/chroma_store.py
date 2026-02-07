@@ -52,7 +52,7 @@ class ChromaVectorStore:
         # 使用Gemini embedding function (默认为 RETRIEVAL_DOCUMENT)
         self.embedding_function = GeminiEmbeddingFunction(
             api_key=api_key,
-            model_name="models/text-embedding-004",
+            model_name="models/gemini-embedding-001",
             task_type="RETRIEVAL_DOCUMENT"
         )
 

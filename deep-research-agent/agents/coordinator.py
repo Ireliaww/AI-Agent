@@ -8,6 +8,7 @@ Coordinator Agent - 多agent协作编排器
 - 支持论文复现workflow (Research → Coding)
 """
 
+import os
 from typing import Optional
 import asyncio
 from rich.console import Console
@@ -184,10 +185,26 @@ Please write clean, well-documented code to solve this problem. Include:
 ### README
 {implementation.readme[:1000]}...
 
-✅ **Complete implementation saved!**
+---
+
+## 💾 Saving Implementation
 """
+                # Save project to disk
+                output_dir = os.path.join("generated_projects", implementation.project.name)
+                console.print(f"\n[yellow]💾 Saving project to: {output_dir}[/yellow]")
                 
-                console.print("[green]✓ Paper reproduction completed successfully[/green]")
+                saved_path = self.coding_agent.save_project(implementation.project, output_dir)
+                
+                result += f"\n\n📁 **Project saved to:** `{saved_path}`\n"
+                result += f"\n### Next Steps\n"
+                result += f"```bash\n"
+                result += f"cd {saved_path}\n"
+                result += f"pip install -r requirements.txt\n"
+                result += f"python train.py\n"
+                result += f"```\n"
+                
+                console.print(f"[green]✅ Paper reproduction completed successfully![/green]")
+                console.print(f"[green]📁 Project saved to: {saved_path}[/green]")
                 return result
         
         # Fallback to regular workflow

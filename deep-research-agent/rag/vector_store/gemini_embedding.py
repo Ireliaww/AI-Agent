@@ -28,7 +28,7 @@ class GeminiEmbeddingFunction:
     def __init__(
         self,
         api_key: str = None,
-        model_name: str = "models/text-embedding-004",
+        model_name: str = "models/gemini-embedding-001",
         task_type: str = "RETRIEVAL_DOCUMENT"
     ):
         """
@@ -36,7 +36,7 @@ class GeminiEmbeddingFunction:
 
         Args:
             api_key: Google API Key，如果为None则从环境变量读取
-            model_name: Gemini embedding模型名称，默认为text-embedding-004
+            model_name: Gemini embedding模型名称，默认为gemini-embedding-001
             task_type: 任务类型
                 - RETRIEVAL_DOCUMENT: 用于存储文档 (默认)
                 - RETRIEVAL_QUERY: 用于查询检索

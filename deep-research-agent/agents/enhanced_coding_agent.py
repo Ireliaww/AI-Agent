@@ -439,13 +439,16 @@ Generate Markdown README:"""
         else:
             return base_reqs
     
-    def save_project(self, project: ProjectStructure, output_dir: str):
+    def save_project(self, project: ProjectStructure, output_dir: str) -> str:
         """
         Save project structure to disk
         
         Args:
             project: Project to save
             output_dir: Output directory
+            
+        Returns:
+            Path to saved project
         """
         import os
         
@@ -470,8 +473,16 @@ Generate Markdown README:"""
             with open(full_path, 'w') as f:
                 f.write(content)
         
+        # Write requirements.txt from list if not already in files
+        if "requirements.txt" not in project.files:
+            req_path = os.path.join(project_path, "requirements.txt")
+            with open(req_path, 'w') as f:
+                f.write("# Project dependencies\\n")
+        
         print(f"✅ Project saved to: {project_path}")
-        print(f"\n{project.get_tree()}")
+        print(f"\\n{project.get_tree()}")
+        
+        return project_path
 
 
 if __name__ == "__main__":
