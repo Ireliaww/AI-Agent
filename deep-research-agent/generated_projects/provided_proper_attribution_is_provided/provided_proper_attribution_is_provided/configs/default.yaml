@@ -1,0 +1,17 @@
+# Default configuration for pytorch training
+
+model:
+  name: model
+  hidden_size: 256
+  num_layers: 3
+
+training:
+  batch_size: 32
+  learning_rate: 0.001
+  epochs: 100
+  device: cuda
+
+data:
+  train_path: data/train
+  val_path: data/val
+  num_workers: 4

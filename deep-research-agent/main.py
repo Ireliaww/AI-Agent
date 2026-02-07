@@ -143,8 +143,8 @@ class MultiModeAssistant:
             gemini_client=self.gemini,
             use_mock=self.use_mock
         )
-        self.coding_agent = CodingAgent(gemini_client=self.gemini)
-        self.enhanced_coding_agent = EnhancedCodingAgent(gemini_client=self.gemini)
+        # Use EnhancedCodingAgent for complete project generation
+        self.coding_agent = EnhancedCodingAgent(gemini_client=self.gemini)
         self.coordinator = CoordinatorAgent(
             research_agent=self.research_agent,
             coding_agent=self.coding_agent,

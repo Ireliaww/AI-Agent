@@ -93,35 +93,64 @@ class EnhancedResearchAgent:
     
     def _extract_paper_title(self, user_request: str) -> str:
         """
-        Extract paper title from user request using simple heuristics
+        Extract paper identifier from user request
         
-        Examples:
-        - "Reproduce BERT paper" -> "BERT"
-        - "Implement Attention Is All You Need" -> "Attention Is All You Need"
-        - "help me reproduce \"Attention is All You Need\"" -> "Attention is All You Need"
+        Supports:
+        - arXiv IDs: "1706.03762", "arxiv:1706.03762"
+        - arXiv URLs: "https://arxiv.org/abs/1706.03762"
+        - Quoted titles: '"Attention Is All You Need"'
+        - Natural language: "Reproduce BERT paper"
+        
+        Returns:
+            Paper identifier (arXiv ID, URL, or title)
         """
         import re
         
-        # Pattern 1: Text in quotes
+        request_lower = user_request.lower().strip()
+        
+        # Pattern 0: arXiv URLs (highest priority - most precise)
+        arxiv_url_patterns = [
+            r'(?:https?://)?arxiv\.org/(?:abs|pdf)/([\d\.]+)',
+            r'(?:https?://)?ar5iv\.org/(?:abs|pdf)/([\d\.]+)',
+        ]
+        for pattern in arxiv_url_patterns:
+            match = re.search(pattern, user_request, re.IGNORECASE)
+            if match:
+                arxiv_id = match.group(1)
+                print(f"✓ Detected arXiv ID from URL: {arxiv_id}")
+                return arxiv_id
+        
+        # Pattern 1: arXiv IDs (e.g., "1706.03762", "arxiv:1706.03762")
+        arxiv_id_match = re.search(r'(?:arxiv:?\s*)?([\d]{4}\.[\d]{4,5})', user_request, re.IGNORECASE)
+        if arxiv_id_match:
+            arxiv_id = arxiv_id_match.group(1)
+            print(f"✓ Detected arXiv ID: {arxiv_id}")
+            return arxiv_id
+        
+        # Pattern 2: Text in quotes (high confidence)
         quoted = re.findall(r'["\u2018\u2019\u201c\u201d]([^"\u2018\u2019\u201c\u201d]+)["\u2018\u2019\u201c\u201d]', user_request)
         if quoted:
-            return quoted[0].strip()
+            title = quoted[0].strip()
+            print(f"✓ Extracted title from quotes: '{title}'")
+            return title
         
-        # Pattern 2: "reproduce/implement X paper" -> X
-        # Match common patterns
+        # Pattern 3: "reproduce/implement X paper" -> X
         patterns = [
             r'reproduce\s+(?:the\s+)?["\u2018\u201c]?([^"\u2018\u201c\u201d\u2019]+?)["\u2019\u201d]?\s+(?:paper|model|architecture)',
             r'implement\s+(?:the\s+)?["\u2018\u201c]?([^"\u2018\u201c\u201d\u2019]+?)["\u2019\u201d]?\s+(?:paper|model|architecture|from)',
             r'analyze\s+(?:the\s+)?["\u2018\u201c]?([^"\u2018\u201c\u201d\u2019]+?)["\u2019\u201d]?\s+(?:paper|from)',
-            r'code\s+(?:the\s+)?["\u2018\u201c]?([^"\u2018\u201c\u201d\u2019]+?)["\u2019\u201d]?\s+(?:paper|model|architecture)',
+            r'code\s+(?:the\s+)?["\u2018\u201c]?([^"\u2018\u201c\u201d\u2019]+?)["\u2019\u201d]?\s+(?:paper|model)',
         ]
         
         for pattern in patterns:
             match = re.search(pattern, user_request, re.IGNORECASE)
             if match:
-                return match.group(1).strip()
+                title = match.group(1).strip()
+                print(f"✓ Extracted title from pattern: '{title}'")
+                return title
         
         # Fallback: return entire request (will be searched)
+        print(f"⚠ Using full query for search: '{user_request}'")
         return user_request
     
     async def research(self, question: str) -> ResearchResult:
@@ -198,12 +227,22 @@ class EnhancedResearchAgent:
         
         # Case 3: Search by title
         else:
-            papers = await self.academic_search.search_arxiv(paper_input, max_results=1)
+            print(f"🔍 Searching arXiv for: '{paper_input}'")
+            papers = await self.academic_search.search_arxiv(paper_input, max_results=3)
             if not papers:
                 raise ValueError(f"Could not find paper: {paper_input}")
             
+            # Show top results for user verification
+            print(f"\n📚 Found {len(papers)} paper(s):")
+            for i, p in enumerate(papers[:3], 1):
+                print(f"  {i}. {p.title}")
+                print(f"     arXiv:{p.arxiv_id} | {p.authors[0] if p.authors else 'Unknown'}")
+            
+            # Use first result (most relevant)
             paper = papers[0]
             arxiv_id = paper.arxiv_id
+            print(f"\n✓ Using: {paper.title}")
+            print(f"  arXiv ID: {arxiv_id}")
             
             # Download PDF
             pdf_path = os.path.join(tempfile.gettempdir(), f"{arxiv_id}.pdf")
@@ -218,7 +257,8 @@ class EnhancedResearchAgent:
         self,
         paper_input: str,
         create_index: bool = True,
-        deep_analysis: bool = True
+        deep_analysis: bool = True,
+        artifact_manager = None  # New: Optional artifact manager for saving analysis
     ) -> PaperAnalysis:
         """
         Deeply analyze a paper with RAG
@@ -227,6 +267,7 @@ class EnhancedResearchAgent:
             paper_input: PDF path, arXiv ID, or paper title
             create_index: Whether to create vector index
             deep_analysis: Whether to perform deep Q&A analysis
+            artifact_manager: Optional ArtifactManager to save artifacts
             
         Returns:
             Complete paper analysis
@@ -312,8 +353,50 @@ class EnhancedResearchAgent:
             paper_content.title
         )
         
+        
         print(f"✓ Found {len(related_papers)} related papers")
         print(f"✓ Found {len(implementations)} code implementations")
+        
+        # Save artifacts if artifact_manager provided
+        if artifact_manager and understanding:
+            print("\n💾 Saving analysis artifacts...")
+            
+            # Prepare RAG query results for artifact
+            rag_queries = []
+            if hasattr(understanding, 'qa_details') and understanding.qa_details:
+                for question, qa_result in understanding.qa_details.items():
+                    rag_queries.append({
+                        'query': question,
+                        'chunks_found': len(qa_result.get('chunks', [])),
+                        'chunks': [
+                            {
+                                'text': chunk.get('text', '')[:300],
+                                'similarity': chunk.get('score', 0.0)
+                            }
+                            for chunk in qa_result.get('chunks', [])
+                        ],
+                        'analysis': qa_result.get('answer', '')
+                    })
+            
+            # Save paper analysis artifact
+            try:
+                artifact_path = artifact_manager.save_paper_analysis(
+                    title=paper_content.title,
+                    authors=', '.join(paper_content.authors[:5]),
+                    arxiv_id=paper_meta.arxiv_id if paper_meta else "Unknown",
+                    sections=len(paper_content.sections),
+                    chunks=len(chunks) if 'chunks' in locals() else 0,
+                    rag_queries=rag_queries,
+                    understanding={
+                        'contributions': understanding.contributions,
+                        'methodology': understanding.methodology,
+                        'experiments': understanding.experiments
+                    },
+                    confidence=95.0
+                )
+                print(f"✓ Saved: {artifact_path}")
+            except Exception as e:
+                print(f"⚠️ Failed to save artifact: {e}")
         
         return PaperAnalysis(
             content=paper_content,

@@ -11,9 +11,11 @@ Capabilities:
 import os
 from typing import Dict, List, Optional
 from dataclasses import dataclass, field
+import time
 
 from src.client import GeminiClient
 from agents.enhanced_research_agent import PaperAnalysis, PaperUnderstanding
+from utils.progress_display import progress_display
 
 
 @dataclass
@@ -129,28 +131,49 @@ class EnhancedCodingAgent:
         Returns:
             Complete implementation
         """
-        print(f"🎓 Implementing paper: {paper_analysis.content.title}")
-        print(f"   Framework: {framework}")
+        start_time = time.time()
+        
+        # Show header
+        progress_display.show_step_header(1, "Paper Implementation", 5)
+        progress_display.console.print(f"[bold cyan]🎓 Implementing:[/bold cyan] {paper_analysis.content.title}")
+        progress_display.console.print(f"[dim]   Framework: {framework}[/dim]\n")
         
         paper_title = paper_analysis.content.title
         understanding = paper_analysis.understanding
         
         # Step 1: Generate model architecture
-        print("\n📐 Generating model architecture...")
+        progress_display.show_step_header(2, "Model Architecture Generation", 5)
+        progress_display.show_ai_thinking(
+            f"Analyzing paper methodology to design {framework} model architecture...\n"
+            f"Key components identified: {understanding.methodology[:100]}...",
+            "Model Design"
+        )
+        
         model_code = await self._generate_model_from_understanding(
             understanding,
             framework
         )
         
+        progress_display.console.print("[green]✅ Model architecture generated[/green]\n")
+        
         # Step 2: Generate training script
-        print("🏋️ Generating training script...")
+        progress_display.show_step_header(3, "Training Script Generation", 5)
+        progress_display.show_ai_thinking(
+            f"Creating training pipeline based on experimental setup...\n"
+            f"Experiments: {understanding.experiments[:100]}...",
+            "Training Setup"
+        )
+        
         training_code = await self._generate_training_script(
             understanding,
             framework
         )
         
+        progress_display.console.print("[green]✅ Training script generated[/green]\n")
+        
         # Step 3: Create project structure
-        print("🏗️ Creating project structure...")
+        progress_display.show_step_header(4, "Project Structure Creation", 5)
+        
         project = await self._create_paper_project_structure(
             paper_title,
             framework,
@@ -158,8 +181,17 @@ class EnhancedCodingAgent:
             training_code
         )
         
+        # Show project tree
+        progress_display.show_file_tree(
+            project.name,
+            list(project.files.keys()),
+            project.directories
+        )
+        progress_display.console.print()
+        
         # Step 4: Generate README
-        print("📄 Generating README...")
+        progress_display.show_step_header(5, "Documentation Generation", 5)
+        
         readme = await self._generate_readme(
             paper_analysis,
             framework
@@ -168,7 +200,21 @@ class EnhancedCodingAgent:
         # Step 5: Extract dependencies
         requirements = self._extract_requirements(framework)
         
-        print(f"✅ Implementation complete!")
+        duration = time.time() - start_time
+        
+        # Show completion summary
+        progress_display.show_completion_summary(
+            "Implementation Complete",
+            [
+                {'icon': '📐', 'text': f'Model architecture ({len(model_code)} chars)'},
+                {'icon': '🏋️', 'text': f'Training script ({len(training_code)} chars)'},
+                {'icon': '🏗️', 'text': f'Project structure ({len(project.files)} files)'},
+                {'icon': '📄', 'text': f'README documentation'},
+                {'icon': '📦', 'text': f'Dependencies ({len(requirements)} packages)'},
+            ],
+            duration=duration,
+            success=True
+        )
         
         return PaperImplementation(
             paper_title=paper_title,

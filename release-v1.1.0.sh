@@ -11,6 +11,9 @@ echo ""
 # Navigate to project root
 cd "/Users/ericwang/LLM Agent/AI-Agent"
 
+# Disable git pager for this session
+export GIT_PAGER=cat
+
 echo "📁 Current directory: $(pwd)"
 echo ""
 
