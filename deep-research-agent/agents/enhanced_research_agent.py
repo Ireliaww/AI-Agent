@@ -278,8 +278,17 @@ class EnhancedResearchAgent:
             print("\n🔍 [PDF] Creating vector index...")
             collection_name = self._create_collection_name(paper_content.title)
             
-            # Chunk the paper
-            chunks = self.text_chunker.chunk_paper(paper_content)
+            # Convert sections to pages format for chunking
+            pages = []
+            for i, (section_name, section_text) in enumerate(paper_content.sections.items()):
+                if section_text.strip():
+                    pages.append({
+                        "page_number": i + 1,
+                        "text": f"## {section_name}\n\n{section_text}"
+                    })
+            
+            # Chunk the text
+            chunks = self.text_chunker.chunk_text(pages) if pages else []
             print(f"✓ [PDF] Created {len(chunks)} chunks")
             
             # Create/load vector store
