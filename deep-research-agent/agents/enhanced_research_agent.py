@@ -355,7 +355,18 @@ class EnhancedResearchAgent:
         
         
         print(f"✓ Found {len(related_papers)} related papers")
+        if related_papers:
+            for i, paper in enumerate(related_papers[:3], 1):
+                print(f"  {i}. {paper.title}")
+                print(f"     Authors: {', '.join(paper.authors[:3])}")
+                print(f"     arXiv: {paper.arxiv_id}")
+        
         print(f"✓ Found {len(implementations)} code implementations")
+        if implementations:
+            for i, impl in enumerate(implementations[:3], 1):
+                print(f"  {i}. {impl.repo_name} ({impl.stars} ⭐)")
+                print(f"     URL: {impl.repo_url}")
+        
         
         # Save artifacts if artifact_manager provided
         if artifact_manager and understanding:
