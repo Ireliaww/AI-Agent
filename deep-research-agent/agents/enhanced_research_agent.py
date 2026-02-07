@@ -255,6 +255,58 @@ class EnhancedResearchAgent:
             
             return paper, pdf_path
     
+    async def _analyze_pdf_with_rag(
+        self,
+        paper_query: str,
+        create_index: bool = True,
+        deep_analysis: bool = True
+    ):
+        """Helper method to perform PDF analysis with RAG"""
+        # Step 1: Get paper PDF
+        paper_meta, pdf_path = await self._get_paper(paper_query)
+        
+        # Step 2: Parse PDF
+        print("📖 [PDF] Parsing PDF...")
+        paper_content = self.pdf_parser.parse(pdf_path)
+        print(f"✓ [PDF] Parsed: {paper_content.title}")
+        print(f"  Authors: {', '.join(paper_content.authors[:3])}")
+        print(f"  Sections: {len(paper_content.sections)}")
+        
+        # Step 3: Create RAG index
+        collection_name = None
+        if create_index:
+            print("\n🔍 [PDF] Creating vector index...")
+            collection_name = self._create_collection_name(paper_content.title)
+            
+            # Chunk the paper
+            chunks = self.text_chunker.chunk_paper(paper_content)
+            print(f"✓ [PDF] Created {len(chunks)} chunks")
+            
+            # Create/load vector store
+            self.current_vector_store = ChromaVectorStore(
+                collection_name=collection_name,
+                persist_directory="chroma_db_papers"
+            )
+            self.current_collection_name = collection_name
+            
+            # Index chunks
+            print("📚 [PDF] Indexing with ChromaDB...")
+            await self.current_vector_store.add_documents(
+                [chunk.text for chunk in chunks],
+                [{"chunk_id": i, "section": chunk.metadata.get("section", "")} 
+                 for i, chunk in enumerate(chunks)]
+            )
+            print("✓ [PDF] Indexing complete")
+        
+        # Step 4: Deep understanding via Q&A
+        understanding = None
+        if deep_analysis and self.current_vector_store:
+            print("\n💡 [PDF] Performing deep Q&A analysis...")
+            understanding = await self._understand_paper(paper_content)
+            print("✓ [PDF] Understanding complete")
+        
+        return paper_content, understanding, pdf_path
+    
     async def analyze_paper(
         self,
         paper_input: str,
@@ -263,7 +315,7 @@ class EnhancedResearchAgent:
         artifact_manager = None  # New: Optional artifact manager for saving analysis
     ) -> PaperAnalysis:
         """
-        Deeply analyze a paper with RAG
+        Deeply analyze a paper with RAG + Deep Web Research
         
         Args:
             paper_input: PDF path, arXiv ID, or paper title
@@ -272,12 +324,75 @@ class EnhancedResearchAgent:
             artifact_manager: Optional ArtifactManager to save artifacts
             
         Returns:
-            Complete paper analysis
+            Complete paper analysis with web research
         """
         print(f"📄 Analyzing paper: {paper_input}")
+        print("🔄 Starting parallel analysis...")
+        print("  1️⃣  PDF Analysis + RAG Indexing")
+        print("  2️⃣  Deep Web Research (MCP + Brave Search)")
+        print()
         
         # Extract paper title if request is verbose
         paper_query = self._extract_paper_title(paper_input)
+        
+        # ==========================================
+        # PARALLEL EXECUTION: PDF + Web Research
+        # ==========================================
+        import asyncio
+        
+        # Task 1: PDF Download + Parsing + RAG (existing workflow)
+        async def pdf_analysis_task():
+            print("📥 [PDF Analysis] Starting...")
+            return await self._analyze_pdf_with_rag(paper_query, create_index, deep_analysis)
+        
+        # Task 2: Deep Web Research using MCP (like standalone research mode)
+        async def web_research_task():
+            from src.agents.researcher import ResearchAgent
+            print("\n🌐 [Web Research] Initializing MCP-based deep research...")
+            
+            research_agent = ResearchAgent(
+                gemini_client=self.gemini,
+                use_mock=self.use_mock
+            )
+            
+            # Perform deep research on the paper
+            research_query = f'Research the paper "{paper_query}" - find tutorials, explanations, blog posts, and implementation guides'
+            print(f"🔍 [Web Research] Query: {research_query}\n")
+            
+            research_result = await research_agent.research(research_query, max_iterations=2)
+            return research_result
+        
+        # Run both in parallel
+        print("⚡ Running parallel analysis...\n")
+        pdf_result, web_research_result = await asyncio.gather(
+            pdf_analysis_task(),
+            web_research_task(),
+            return_exceptions=True
+        )
+        
+        # Handle errors
+        if isinstance(pdf_result, Exception):
+            print(f"❌ PDF Analysis error: {pdf_result}")
+            raise pdf_result
+        
+        if isinstance(web_research_result, Exception):
+            print(f"⚠️  Web Research error (continuing with PDF only): {web_research_result}")
+            web_research_result = None
+        
+        # Unpack PDF analysis results
+        paper_content, understanding, pdf_path = pdf_result
+        
+        # Display web research results
+        if web_research_result and web_research_result.success:
+            print("\n" + "="*80)
+            print("🌐 WEB RESEARCH COMPLETE")
+            print("="*80)
+            print(f"\n{web_research_result.report}\n")
+            print("="*80 + "\n")
+        
+        # Continue with existing workflow...
+        print("📊 Continuing with RAG queries and paper understanding...")
+        
         print(f"🔍 Extracted query: {paper_query}")
         
         # Step 1: Get paper PDF
