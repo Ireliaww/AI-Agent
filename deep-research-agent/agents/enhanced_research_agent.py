@@ -310,7 +310,7 @@ class EnhancedResearchAgent:
         understanding = None
         if deep_analysis and self.current_vector_store:
             print("\n💡 [PDF] Performing deep Q&A analysis...")
-            understanding = await self._understand_paper_with_rag(paper_content)
+            understanding = await self._understand_paper_with_rag(paper_content, self.current_vector_store)
             print("✓ [PDF] Understanding complete")
         
         return paper_content, understanding, pdf_path
