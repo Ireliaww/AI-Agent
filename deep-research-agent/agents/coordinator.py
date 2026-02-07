@@ -220,7 +220,8 @@ Please write clean, well-documented code to solve this problem. Include:
                     shutil.copytree(artifact_manager.artifacts_dir, final_artifacts_dir)
                 
                 # Generate final reproduction report
-                artifact_manager.project_root = saved_path  # Update to final path
+                from pathlib import Path
+                artifact_manager.project_root = Path(saved_path)  # Update to final path (as Path object)
                 artifact_manager.save_reproduction_report(
                     title=paper_analysis.content.title,
                     authors=', '.join(paper_analysis.content.authors[:5]),
