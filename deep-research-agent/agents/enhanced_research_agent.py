@@ -300,10 +300,9 @@ class EnhancedResearchAgent:
             
             # Index chunks
             print("📚 [PDF] Indexing with ChromaDB...")
-            await self.current_vector_store.add_documents(
-                [chunk.text for chunk in chunks],
-                [{"chunk_id": i, "section": chunk.metadata.get("section", "")} 
-                 for i, chunk in enumerate(chunks)]
+            self.current_vector_store.add_chunks(
+                chunks,
+                source_file=paper_content.title
             )
             print("✓ [PDF] Indexing complete")
         
