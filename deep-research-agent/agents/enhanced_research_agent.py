@@ -310,7 +310,7 @@ class EnhancedResearchAgent:
         understanding = None
         if deep_analysis and self.current_vector_store:
             print("\n💡 [PDF] Performing deep Q&A analysis...")
-            understanding = await self._understand_paper(paper_content)
+            understanding = await self._understand_paper_with_rag(paper_content)
             print("✓ [PDF] Understanding complete")
         
         return paper_content, understanding, pdf_path
@@ -363,8 +363,8 @@ class EnhancedResearchAgent:
                 use_mock=self.use_mock
             )
             
-            # Perform deep research on the paper
-            research_query = f'Research the paper "{paper_query}" - find tutorials, explanations, blog posts, and implementation guides'
+            # Perform deep research on the paper (use original user input for better context)
+            research_query = f'Research the paper "{paper_input}" including tutorials, explanations, blog posts, and implementation guides'
             print(f"🔍 [Web Research] Query: {research_query}\n")
             
             research_result = await research_agent.research(research_query, max_iterations=2)
