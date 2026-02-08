@@ -63,6 +63,7 @@ class PaperAnalysis:
     implementations: List[CodeImplementation] = field(default_factory=list)
     vector_store: Optional[ChromaVectorStore] = None
     collection_name: str = ""
+    web_research_report: Optional[str] = None  # MCP-based web research report
 
 
 class EnhancedResearchAgent:
@@ -600,7 +601,8 @@ class EnhancedResearchAgent:
             related_papers=related_papers,
             implementations=implementations,
             vector_store=self.current_vector_store,
-            collection_name=collection_name or ""
+            collection_name=collection_name or "",
+            web_research_report=web_research_result.report if web_research_result and web_research_result.success else None
         )
     
     async def _understand_paper_with_rag(
