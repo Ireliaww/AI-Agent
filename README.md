@@ -1,27 +1,29 @@
-# 🎓 AI-Agent: Academic Paper Reproduction System
+# 🤖 AI-Agent: Multi-Agent Research & Code Generation System
 
-**AI-Powered Multi-Agent System for Research Paper Understanding and Code Implementation**
+**Intelligent Multi-Agent System for Research, Coding, and Academic Paper Reproduction**
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Gemini API](https://img.shields.io/badge/Gemini-API-4285F4)](https://ai.google.dev/)
 
-> **Transform any research paper into production-ready code with AI**  
-> From PDF analysis to complete ML implementation in minutes
+> **Autonomous AI agents that research, understand, and code**  
+> From deep web research to production ML implementations
 
 ---
 
 ## 📖 What is This?
 
-This repository contains **deep-research-agent**, an advanced multi-agent system that automatically:
+An advanced **multi-agent AI system** powered by specialized agents working together:
 
-1. 📄 **Analyzes academic papers** using RAG (Retrieval-Augmented Generation)
-2. 🧠 **Understands methodology** through semantic search and deep Q&A
-3. 💻 **Generates complete code** with PyTorch/TensorFlow implementations
-4. 🚀 **Creates deployable projects** with training scripts, configs, and documentation
+1. 🔍 **Research Agent** - Deep web search, PDF analysis, and knowledge synthesis
+2. 💻 **Coding Agent** - Production-ready code generation from requirements
+3. 🎓 **Paper Reproduction Agent** - End-to-end academic paper implementation
+4. � **Coordinator Agent** - Intelligent task routing and agent orchestration
 
-**One command**: `"Reproduce BERT paper"`  
-**Output**: Complete ML project ready to train
+**Three powerful modes:**
+- � **Research Mode**: `"Research transformer architecture"` → Comprehensive research report
+- � **Coding Mode**: `"Implement attention mechanism in PyTorch"` → Complete working code  
+- 🎓 **Reproduction Mode**: `"Reproduce BERT paper"` → Full ML project ready to train
 
 ---
 
